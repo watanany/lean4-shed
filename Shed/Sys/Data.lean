@@ -23,6 +23,13 @@ withDuck (fun db => do
 - SQL エラー → DuckDB のエラーメッセージを含む `IO.userError`
 - 行が期待した型に合わない(`queryAs`)→ `IO.userError`
 
+## 型変換の注意
+
+DuckDB の DATE / TIMESTAMP / DECIMAL は JSON 化の際に**文字列**になる
+(ワーカーが `default=str` で直列化するため)。`queryAs` の契約型では
+これらの列は `String` で受けること。数値で欲しいものは SQL 側で
+`::int` / `::double` にキャストするのが確実。
+
 ## 有界性の注意
 
 クエリのタイムアウト・結果行数の上限は未実装。巨大な結果を
@@ -41,7 +48,7 @@ con = duckdb.connect(sys.argv[1])
 for line in sys.stdin:
     req = json.loads(line)
     try:
-        cur = con.execute(req['sql'])
+        cur = con.execute(req['sql'], req.get('params') or [])
         if cur.description is None:
             print(json.dumps({'ok': []}), flush=True)
         else:
@@ -63,9 +70,18 @@ def withDuck (f : Duck → IO α) (path : String := ":memory:") : IO α :=
   withWorker { exe := "python3", args := #["-c", workerPy, path] }
     fun w => f { worker := w }
 
-/-- SQL を実行し、結果の行(1 行 = 1 JSON オブジェクト)を返す。 -/
-def Duck.query (db : Duck) (sql : String) : IO (Array Json) := do
-  let res ← db.worker.callJson (Json.mkObj [("sql", Json.str sql)])
+/-- SQL を実行し、結果の行(1 行 = 1 JSON オブジェクト)を返す。
+
+値は `?` プレースホルダと `params` で渡す(文字列連結でクォートしない):
+```
+db.query "select * from t where name = ? and n > ?"
+  #[Lean.Json.str "o'hara", Lean.toJson 10]
+```
+-/
+def Duck.query (db : Duck) (sql : String) (params : Array Json := #[]) :
+    IO (Array Json) := do
+  let res ← db.worker.callJson
+    (Json.mkObj [("sql", Json.str sql), ("params", Json.arr params)])
   match res.getObjVal? "ok" with
   | .ok rows =>
     match rows.getArr? with
@@ -76,13 +92,13 @@ def Duck.query (db : Duck) (sql : String) : IO (Array Json) := do
     throw <| IO.userError s!"Shed.Sys.Data: SQL エラー: {msg}"
 
 /-- 結果を返さない SQL(DDL / DML)を実行する。 -/
-def Duck.exec (db : Duck) (sql : String) : IO Unit :=
-  discard (db.query sql)
+def Duck.exec (db : Duck) (sql : String) (params : Array Json := #[]) : IO Unit :=
+  discard (db.query sql params)
 
 /-- 型付きクエリ。各行を `FromJson` で再検証する(契約の正本は Lean の型)。 -/
-def Duck.queryAs (β : Type) [Lean.FromJson β] (db : Duck) (sql : String) :
-    IO (Array β) := do
-  let rows ← db.query sql
+def Duck.queryAs (β : Type) [Lean.FromJson β] (db : Duck) (sql : String)
+    (params : Array Json := #[]) : IO (Array β) := do
+  let rows ← db.query sql params
   rows.mapM fun row =>
     match Lean.fromJson? row with
     | .ok b => pure b

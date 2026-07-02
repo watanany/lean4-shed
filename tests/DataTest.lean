@@ -61,6 +61,21 @@ def main : IO Unit := do
       "select count(*) as c from 'examples/dbt/seeds/raw_orders.csv'"
     check "query: CSV 直読み" ((rows[0]!.getObjValD "c").getNat?.toOption == some 4)
 
+    -- パラメータ付きクエリ(クォートを含む値が安全に往復する)
+    let rows ← db.query "select ? as s, ? as n" #[Json.str "o'hara", Lean.toJson (7 : Nat)]
+    check "query: パラメータのクォート安全な往復"
+      (rows[0]!.getObjValD "s" == Json.str "o'hara" &&
+       (rows[0]!.getObjValD "n").getNat?.toOption == some 7)
+    let rows ← db.query "select count(*) as c from orders where status = ?"
+      #[Json.str "placed"]
+    check "query: パラメータでの絞り込み"
+      ((rows[0]!.getObjValD "c").getNat?.toOption == some 2)
+
+    -- DATE は文字列で返る(doc に明記した挙動の固定)
+    let rows ← db.query "select date '2026-01-02' as d"
+    check "query: DATE は文字列で返る"
+      (rows[0]!.getObjValD "d" == Json.str "2026-01-02")
+
     -- SQL エラーは IO.userError
     let failed ← try
       discard <| db.query "select * from no_such_table"
