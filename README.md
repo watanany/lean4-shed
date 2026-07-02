@@ -13,6 +13,23 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 外部接続の主経路はサブプロセス + JSON。FFI は原則使わない。
 重い処理系(DataFrame・DB)は移植せず、型付き契約でサブプロセスとして運転する。
 
+## HTTP クライアント(`Shed.Sys.Http`)
+
+requests 相当の8割。curl サブプロセスの薄いラッパで、タイムアウトは既定 30 秒:
+
+```lean
+open Shed.Sys.Http
+
+let r ← get "https://example.com/api" (headers := #[("X-Token", "...")])
+if r.ok then
+  let json ← IO.ofExcept r.json
+  ...
+
+let r ← postJson "https://example.com/api" (Lean.Json.mkObj [("n", (42 : Nat))])
+```
+
+4xx/5xx は例外にせず `Response.status` / `Response.ok` で判定(requests と同じ)。
+
 ## 契約カーネル(`Shed.Pure.Contract`)
 
 データ契約を Lean の型で正本化し、dbt schema tests / JSON Schema を生成する:
