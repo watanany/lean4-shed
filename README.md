@@ -2,7 +2,7 @@
 
 Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 
-網羅が目的ではない。「Lean で日常の小道具が書ける」状態が目的。
+中心目的: AI 経由の仕事に「機械検査される小さな正本」という固定点を与えること。
 規約は [CLAUDE.md](CLAUDE.md)、設計の経緯は [docs/design.md](docs/design.md)。
 
 ## 構成
@@ -11,6 +11,31 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 - `Shed.Sys.*` — 外部依存(サブプロセス等)を伴うコード
 
 外部接続の主経路はサブプロセス + JSON。FFI は原則使わない。
+重い処理系(DataFrame・DB)は移植せず、型付き契約でサブプロセスとして運転する。
+
+## 契約カーネル(`Shed.Pure.Contract`)
+
+データ契約を Lean の型で正本化し、dbt schema tests / JSON Schema を生成する:
+
+```lean
+def stgOrders : Model := {
+  name := "stg_orders"
+  columns := #[
+    { name := "order_id", type := .integer, unique := true },
+    { name := "status", type := .text,
+      accepted := #["placed", "shipped", "completed", "returned"] } ]
+}
+-- (dbtSchema #[stgOrders]).pretty をそのまま schema.yml に書き出せる
+-- (JSON は合法な YAML)
+```
+
+```sh
+lake env lean --run examples/Contracts.lean examples/out
+# → schema.yml(dbt)、<model>.schema.json(JSON Schema)
+```
+
+契約を変えるときは Lean 側を直して生成し直す。schema.yml は手で編集しない。
+実物の dbt での検証手順は [examples/dbt/README.md](examples/dbt/README.md)。
 
 ## ビルドとテスト
 

@@ -1,3 +1,4 @@
+import Shed.Pure.Contract
 import Shed.Sys.Subprocess
 import Shed.Sys.Worker
 

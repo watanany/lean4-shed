@@ -1,0 +1,5 @@
+name: shed_contract_check
+version: "1.0.0"
+profile: shed_contract_check
+model-paths: ["models"]
+seed-paths: ["seeds"]
