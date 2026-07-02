@@ -1,0 +1,24 @@
+# lake build とスモークテストを回す最小 CI
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: elan をインストール
+        run: |
+          curl -sSfL https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: ビルド
+        run: lake build
+
+      - name: スモークテスト
+        run: lake env lean --run tests/Smoke.lean
