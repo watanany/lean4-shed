@@ -1,4 +1,5 @@
 import Shed.Sys.Subprocess
+import Shed.Sys.Worker
 
 /-!
 # Shed — Lean 4 の個人用実験バッテリー
