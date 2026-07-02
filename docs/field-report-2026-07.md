@@ -86,3 +86,31 @@
   実際、本レポートの筆者は module doc と既存消費者の模倣だけで 1 本書けた
 
 Python パリティを求める人には向かない。それは欠点ではなく仕様(8割/2割)。
+
+## 追記: 改修の還流(同ブランチ、レポート提出直後)
+
+§15 の流儀で、摩擦点は指摘で終わらせず即日改修した。
+
+1. **タイムアウト実装(摩擦点 4 → 解消)**: Subprocess の doc が予告していた
+   `Child.tryWait` ポーリング + `kill` をそのまま実装。`callRaw` / `callJsonRaw` /
+   `call` と `Worker.callJson` / `call` に `timeoutSec := 120`(`0` で無制限)。
+   Worker は時間切れ = プロトコル同期の崩壊なので kill して `finished` に落とす。
+   `Worker.shutdown` も既定 30 秒で kill にエスカレーション(EOF を無視する
+   ワーカーで `withWorker` が固まらない)。Py / Data / Regex / Http に波及済み
+   (Http は curl の `--max-time` が第一境界のまま、外側は +10 秒の保険)。
+   打ち切りの実測は 1.0 秒指定で 1004〜1012ms(tests/Smoke.lean)
+2. **`Regex.Match.named?` を昇格(摩擦点 2 → 解消)**: `#guard` example つき。
+   LogPipeline の自作ヘルパは削除して置き換え
+3. **`Duck.insertRows` を追加(摩擦点 3 → 解消)**: 一時ファイル +
+   `read_json` + `insert into ... by name` の一括投入。キー順不同・クォート・
+   日本語・空配列を tests/DataTest.lean で固定。LogPipeline も切り替え
+4. **セットアップの穴(摩擦点 1 → 解消)**: `setup-lean-nix.py` に
+   preflight(curl / zstd / xz)を追加し、elan 不在時は `/usr/local/bin` への
+   symlink で代替する `register` に分離。elan なしの隔離環境で完走を確認
+5. **CLAUDE.md 技術知見に 2 件追記(摩擦点 6・7)**: 構造体リテラルの
+   複数行インデント、`String.trim` deprecated(`trimAscii`)。
+   Http.lean に残っていた `String.trim` も退治
+
+これで採点表の主な減点要因(有界性ギャップ、Match の引き手、一括投入、
+セットアップ)は解消。残る既知の未実装は「出力サイズ上限」と「結果行数上限」
+(実需待ち。doc に明記済み)。

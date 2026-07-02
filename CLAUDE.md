@@ -71,6 +71,8 @@
 - `Child.takeStdin` は `IO (IO.FS.Handle × Child {cfg with stdin := .null})`
 - `IO.Process.Child ⟨.piped, .piped, .inherit⟩` の型パラメータ表記はそのまま通る
 - match 腕の継続行は `=>` の右の項より深くインデントする(浅いと別項扱い)
+- 構造体リテラルを関数適用の引数内で複数行に割ると、継続行のインデントが
+  浅い場合に `expected '}'` になる。複数行になる構造体は let で束縛してから渡す
 - JSON は合法な YAML: dbt の .yml には Lean の `Json.pretty` 出力をそのまま使える
 - モジュールドキュメント `/-! -/` は import より後に置く
 - 書く前に toolchain の Std を確認する(HashMap 等かなり太っている)。
@@ -78,7 +80,8 @@
 - Std / core に既にある(ラップ不要): `IO.FS.withTempFile` / `withTempDir`、
   `System.FilePath.walkDir`、`IO.getEnv`、`Std.Time`
   (`PlainDateTime.now` の toString が ISO 8601)
-- `String.drop` / `takeWhile` 等は 4.30 で `String.Slice` を返す(`.toString` が要る)
+- `String.drop` / `takeWhile` 等は 4.30 で `String.Slice` を返す(`.toString` が要る)。
+  `String.trim` は deprecated(`trimAscii` を使う。これも Slice を返す)
 
 ## 開発ループ
 - toolchain は `lean-toolchain` で安定版最新に固定する
