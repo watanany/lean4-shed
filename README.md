@@ -23,6 +23,7 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 | `Sys.Data` | DuckDB の運転(SQL → 型付き行) | `tests/DataTest.lean` |
 | `Sys.Py` | Python 脱出ハッチ(型は Lean のまま) | `tests/DataTest.lean` |
 | `Sys.Log` | ISO 8601 + レベルの最小ロガー | `tests/OsLogTest.lean` |
+| `Sys.Regex` | PCRE 級の正規表現(Python re を運転) | `tests/RegexTest.lean` |
 
 Std / core に既にあるものはラップしない(一時ファイル・walkDir・環境変数・
 日時は Lean 標準を直接使う。CLAUDE.md の技術知見を参照)。
@@ -68,6 +69,24 @@ withDuck fun db => do
 ```lean
 let sorted : Array Nat ← Shed.Sys.Py.call "sorted(set(data))" #[3, 1, 3, 2]
 ```
+
+## 正規表現(`Shed.Sys.Regex`)
+
+PCRE 級の全機能(先読み・後読み・後方参照・名前付きグループ)。
+再実装ではなく Python の `re` を常駐ワーカーとして運転するので、
+意味論は Python と完全に一致する:
+
+```lean
+open Shed.Sys.Regex
+
+withRe fun re => do
+  let ok ← re.test "\\d{4}-\\d{2}-\\d{2}" "2026-07-02"
+  let m ← re.find? "(?P<user>\\w+)@(\\w+)" "taro@example"
+  let s ← re.replace "(\\w+)@(\\w+)" "taro@example" "\\2/\\1"
+  let parts ← re.split "\\s*[,、]\\s*" "a, b、c"
+```
+
+パターンはワーカー側でキャッシュされ、同一パターンの反復は速い。
 
 ## 契約カーネル(`Shed.Pure.Contract`)
 
