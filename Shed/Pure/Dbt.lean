@@ -122,50 +122,54 @@ def Project.parse! (s : String) : Project :=
 
 -- ## レイヤー規約
 
-/-- モデルの層。 -/
-inductive Layer where
-  | staging
-  | mart
-  deriving Repr, BEq
+/-- 生データ(seed / source)か。 -/
+def NodeType.isRaw : NodeType → Bool
+  | .seed | .source => true
+  | _ => false
 
-/-- プロジェクト側の命名規約。shed は道具(dbt)は知ってよいが、
-特定プロジェクトの規約は知らない — 規約はここで注入する。既定は
-dbt コミュニティの慣習(`stg_` 接頭辞)。 -/
-structure Conventions where
-  stagingPrefix : String := "stg_"
-  deriving Repr, Inhabited
-
-/-- 命名規約に基づく層の分類。 -/
-def Node.layer (n : Node) (conv : Conventions := {}) : Layer :=
-  if n.name.startsWith conv.stagingPrefix then .staging else .mart
-
-/-- 検証規則。プロジェクト全体を見て違反メッセージの列を返す。 -/
-def Rule := Project → Array String
-
-/-- 依存先ノードの種別を引く(見つからなければ uniqueId の接頭辞で推定)。 -/
-private def depType (p : Project) (uid : String) : NodeType :=
+/-- 依存先ノードの種別を引く(見つからなければ uniqueId の接頭辞で推定)。
+カスタム規則を書くための公開 API。 -/
+def Project.depType (p : Project) (uid : String) : NodeType :=
   match p.find? uid with
   | some n => n.type
   | none => NodeType.ofString (uid.splitOn "." |>.headD "")
 
+/-- プロジェクト側の命名規約。shed は道具(dbt)は知ってよいが、
+特定プロジェクトの規約は知らない — 規約は**述語**として注入する
+(実プロジェクトの多層命名は単一接頭辞では表現できない、という
+初回接触のフィードバックによる設計)。既定は dbt コミュニティの
+慣習(`stg_` 接頭辞)。 -/
+structure Conventions where
+  /-- staging 層(生データの取り込み口)と見なすモデルの述語 -/
+  isStaging : Node → Bool := fun n => n.name.startsWith "stg_"
+
+/-- 複数接頭辞の簡便コンストラクタ:
+`Conventions.ofPrefixes #["stg_", "base_", "src_"]` -/
+def Conventions.ofPrefixes (staging : Array String) : Conventions :=
+  { isStaging := fun n => staging.any (n.name.startsWith ·) }
+
+/-- 検証規則。プロジェクト全体を見て違反メッセージの列を返す。 -/
+def Rule := Project → Array String
+
 /-- 規則: staging モデルは生データ(seed / source)だけに依存する。 -/
 def stagingOnlyFromRaw (conv : Conventions := {}) : Rule := fun p =>
-  p.models.filter (·.layer conv == .staging) |>.flatMap fun m =>
+  p.models.filter conv.isStaging |>.flatMap fun m =>
     m.dependsOn.filterMap fun dep =>
-      match depType p dep with
-      | .seed | .source => none
-      | _ => some s!"{m.name}: staging モデルが生データ以外({dep})に依存している"
+      if (p.depType dep).isRaw then none
+      else some s!"{m.name}: staging モデルが生データ以外({dep})に依存している"
 
-/-- 規則: mart モデルは生データに直接依存しない(必ず staging を経由する)。 -/
+/-- 規則: staging 以外(mart 等)のモデルは生データに直接依存しない
+(必ず staging を経由する)。 -/
 def martsNotOnRaw (conv : Conventions := {}) : Rule := fun p =>
-  p.models.filter (·.layer conv == .mart) |>.flatMap fun m =>
+  p.models.filter (fun n => !conv.isStaging n) |>.flatMap fun m =>
     m.dependsOn.filterMap fun dep =>
-      match depType p dep with
-      | .seed | .source => some s!"{m.name}: mart モデルが生データ({dep})に直接依存している"
-      | _ => none
+      if (p.depType dep).isRaw then
+        some s!"{m.name}: mart モデルが生データ({dep})に直接依存している"
+      else none
 
 /-- 既定の規則一式(既定の命名規約)。`dbt_check` コマンドはこれを実行する。
-プロジェクト固有の規約は `stagingOnlyFromRaw { stagingPrefix := ... }` の形で注入する。 -/
+プロジェクト固有の規約は `stagingOnlyFromRaw (Conventions.ofPrefixes #[...])` や
+`stagingOnlyFromRaw { isStaging := fun n => ... }` の形で注入する。 -/
 def defaultRules : Array Rule := #[stagingOnlyFromRaw, martsNotOnRaw]
 
 /-- 全規則を実行して違反を集める。 -/
@@ -187,9 +191,17 @@ private def exampleProject : Project := {
 -- example: 規約に沿ったプロジェクトは違反ゼロ
 #guard runRules defaultRules exampleProject == #[]
 
--- example: 命名規約は注入できる(接頭辞を変えると分類が変わる)
-#guard (Node.layer { uniqueId := "model.pkg.base_a", name := "base_a", type := .model }
-        { stagingPrefix := "base_" }) == .staging
+-- example: 命名規約は述語として注入できる(複数接頭辞はヘルパで)
+#guard (Conventions.ofPrefixes #["stg_", "base_"]).isStaging
+        { uniqueId := "model.pkg.base_a", name := "base_a", type := .model }
+#guard !((Conventions.ofPrefixes #["stg_"]).isStaging
+        { uniqueId := "model.pkg.dim_a", name := "dim_a", type := .model })
+
+-- example: 任意の述語(タグ分類など)も注入できる
+#guard (stagingOnlyFromRaw { isStaging := fun n => n.tags.contains "staging" }
+        { nodes := #[
+          { uniqueId := "model.pkg.a", name := "a", type := .model,
+            dependsOn := #["model.pkg.b"], tags := #["staging"] }] }).size == 1
 
 -- example: staging がモデルに依存すると stagingOnlyFromRaw が検出する
 #guard (stagingOnlyFromRaw (conv := {}) { nodes := #[
