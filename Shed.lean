@@ -1,11 +1,14 @@
 import Shed.Pure.Contract
 import Shed.Pure.Dbt
+import Shed.Pure.Glob
 import Shed.Sys.Subprocess
 import Shed.Sys.Worker
 import Shed.Sys.Dbt
 import Shed.Sys.Http
 import Shed.Sys.Py
 import Shed.Sys.Data
+import Shed.Sys.Os
+import Shed.Sys.Log
 
 /-!
 # Shed — Lean 4 の個人用実験バッテリー

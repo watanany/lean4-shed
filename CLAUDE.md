@@ -70,6 +70,10 @@
 - モジュールドキュメント `/-! -/` は import より後に置く
 - 書く前に toolchain の Std を確認する(HashMap 等かなり太っている)。
   外部依存(batteries 等)は toolchain 追従コストを負うため原則追加しない
+- Std / core に既にある(ラップ不要): `IO.FS.withTempFile` / `withTempDir`、
+  `System.FilePath.walkDir`、`IO.getEnv`、`Std.Time`
+  (`PlainDateTime.now` の toString が ISO 8601)
+- `String.drop` / `takeWhile` 等は 4.30 で `String.Slice` を返す(`.toString` が要る)
 
 ## 開発ループ
 - toolchain は `lean-toolchain` で安定版最新に固定する
