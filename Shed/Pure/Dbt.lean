@@ -148,15 +148,27 @@ structure Conventions where
 def Conventions.ofPrefixes (staging : Array String) : Conventions :=
   { isStaging := fun n => staging.any (n.name.startsWith ·) }
 
-/-- 検証規則。プロジェクト全体を見て違反メッセージの列を返す。 -/
-def Rule := Project → Array String
+/-- 規約違反。受容宣言(`Waiver`)との照合のため、モデルと依存先の
+uniqueId を構造として持つ。 -/
+structure Violation where
+  /-- 違反したモデルの uniqueId -/
+  modelId : String
+  /-- 問題の依存先の uniqueId -/
+  depId : String
+  /-- 人間向けメッセージ -/
+  message : String
+  deriving Repr, BEq, Inhabited
+
+/-- 検証規則。プロジェクト全体を見て違反の列を返す。 -/
+def Rule := Project → Array Violation
 
 /-- 規則: staging モデルは生データ(seed / source)だけに依存する。 -/
 def stagingOnlyFromRaw (conv : Conventions := {}) : Rule := fun p =>
   p.models.filter conv.isStaging |>.flatMap fun m =>
     m.dependsOn.filterMap fun dep =>
       if (p.depType dep).isRaw then none
-      else some s!"{m.name}: staging モデルが生データ以外({dep})に依存している"
+      else some { modelId := m.uniqueId, depId := dep,
+                  message := s!"{m.name}: staging モデルが生データ以外({dep})に依存している" }
 
 /-- 規則: staging 以外(mart 等)のモデルは生データに直接依存しない
 (必ず staging を経由する)。 -/
@@ -164,7 +176,8 @@ def martsNotOnRaw (conv : Conventions := {}) : Rule := fun p =>
   p.models.filter (fun n => !conv.isStaging n) |>.flatMap fun m =>
     m.dependsOn.filterMap fun dep =>
       if (p.depType dep).isRaw then
-        some s!"{m.name}: mart モデルが生データ({dep})に直接依存している"
+        some { modelId := m.uniqueId, depId := dep,
+               message := s!"{m.name}: mart モデルが生データ({dep})に直接依存している" }
       else none
 
 /-- 既定の規則一式(既定の命名規約)。`dbt_check` コマンドはこれを実行する。
@@ -172,9 +185,48 @@ def martsNotOnRaw (conv : Conventions := {}) : Rule := fun p =>
 `stagingOnlyFromRaw { isStaging := fun n => ... }` の形で注入する。 -/
 def defaultRules : Array Rule := #[stagingOnlyFromRaw, martsNotOnRaw]
 
-/-- 全規則を実行して違反を集める。 -/
+/-- 全規則を実行して違反メッセージを集める(受容宣言なしの素朴版)。 -/
 def runRules (rules : Array Rule) (p : Project) : Array String :=
-  rules.flatMap (· p)
+  rules.flatMap (· p) |>.map (·.message)
+
+-- ## 受容宣言(意図的な規約違反の表明)
+
+/--
+受容済みの依存 = 意図的な設計判断としての規約違反。
+
+例外は「見逃し」ではなく**署名済みの判断**として残す —
+だから `reason` は必須。理由を書けない例外は受容ではなく放置である。
+-/
+structure Waiver where
+  /-- 違反モデルの uniqueId(例: "model.pkg.dim_area")-/
+  model : String
+  /-- 受容する依存先の uniqueId(例: "source.pkg.gsheet.master")-/
+  dep : String
+  /-- なぜこの違反を受け入れるのか(必須)-/
+  reason : String
+  deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
+
+/-- 違反の列に受容宣言を適用する。
+返り値: (残った違反, 一度も使われなかった宣言)。
+
+**未使用の宣言も異常**として返す — 違反が解消されたのに宣言が残るのは
+受容リストの腐敗(実態と合っていない)なので、呼び出し側はエラーにすべき。 -/
+def applyWaivers (waivers : Array Waiver) (violations : Array Violation) :
+    Array Violation × Array Waiver :=
+  let remaining := violations.filter fun v =>
+    !waivers.any fun w => w.model == v.modelId && w.dep == v.depId
+  let unused := waivers.filter fun w =>
+    !violations.any fun v => w.model == v.modelId && w.dep == v.depId
+  (remaining, unused)
+
+/-- 全規則を実行し、受容宣言を適用した上で異常メッセージを集める。
+残った違反と未使用の宣言の両方が異常。空なら健全。 -/
+def runRulesWith (waivers : Array Waiver) (rules : Array Rule) (p : Project) :
+    Array String :=
+  let (remaining, unused) := applyWaivers waivers (rules.flatMap (· p))
+  remaining.map (·.message)
+    ++ unused.map fun w =>
+      s!"未使用の受容宣言: {w.model} → {w.dep}(違反が存在しない。宣言を削除せよ)"
 
 -- ## 実行可能 example
 
@@ -213,6 +265,25 @@ private def exampleProject : Project := {
     { uniqueId := "seed.pkg.raw_a", name := "raw_a", type := .seed },
     { uniqueId := "model.pkg.report_b", name := "report_b", type := .model,
       dependsOn := #["seed.pkg.raw_a"] }] }).size == 1
+
+-- example: 受容宣言は該当する違反を消し、残りだけが異常になる
+#guard
+  let violations := #[
+    { modelId := "model.pkg.dim_a", depId := "source.pkg.gsheet.m",
+      message := "..." : Violation },
+    { modelId := "model.pkg.dim_b", depId := "seed.pkg.pref",
+      message := "..." : Violation }]
+  let waivers := #[
+    { model := "model.pkg.dim_a", dep := "source.pkg.gsheet.m",
+      reason := "マスタの staging 化まで直読みを許容" : Waiver }]
+  (applyWaivers waivers violations).1.map (·.modelId) == #["model.pkg.dim_b"]
+
+-- example: 違反が解消されたのに残った宣言は「未使用」として検出される
+#guard
+  let waivers := #[
+    { model := "model.pkg.dim_a", dep := "seed.pkg.x",
+      reason := "撤去済みのはず" : Waiver }]
+  (applyWaivers waivers #[]).2 == waivers
 
 -- example: To/FromJson の roundtrip(取り込みコマンドの埋め込みが依存する性質)
 #guard (match (fromJson? (toJson exampleProject) : Except String Project) with

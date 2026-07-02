@@ -50,15 +50,33 @@ elab "def_dbt_project " name:ident " from " path:str : command => do
 /--
 `dbt_check "<manifest.json>"` — 既定のレイヤー規約をコンパイル時に実行し、
 違反があればコンパイルを失敗させる。
+
+`dbt_check "<manifest.json>" accepting "<waivers.json>"` — 受容宣言
+(`Waiver` の JSON 配列。`model` / `dep` / `reason` が必須)を適用した上で
+検査する。残った違反と**未使用の宣言**の両方がコンパイルエラーになる。
 -/
-elab "dbt_check " path:str : command => do
-  let proj ← match ← loadProject path.getString with
+private def checkImpl (path : String) (waiversPath : Option String) :
+    CommandElabM Unit := do
+  let proj ← match ← loadProject path with
     | .ok p => pure p
-    | .error e => throwError "dbt_check: {path.getString} の取り込みに失敗: {e}"
-  let violations := runRules defaultRules proj
-  if violations.isEmpty then
-    logInfo s!"dbt_check: モデル {proj.models.size} 件、レイヤー規約違反なし"
+    | .error e => throwError "dbt_check: {path} の取り込みに失敗: {e}"
+  let waivers : Array Waiver ← match waiversPath with
+    | none => pure #[]
+    | some wp =>
+      let content ← IO.FS.readFile ⟨wp⟩
+      match Lean.Json.parse content >>= Lean.fromJson? with
+      | .ok ws => pure ws
+      | .error e => throwError "dbt_check: 受容宣言 {wp} の読み込みに失敗: {e}"
+  let problems := runRulesWith waivers defaultRules proj
+  if problems.isEmpty then
+    logInfo s!"dbt_check: モデル {proj.models.size} 件、レイヤー規約違反なし(受容宣言 {waivers.size} 件適用)"
   else
-    throwError "dbt_check: レイヤー規約違反 {violations.size} 件:\n{String.intercalate "\n" violations.toList}"
+    throwError "dbt_check: 異常 {problems.size} 件:\n{String.intercalate "\n" problems.toList}"
+
+elab "dbt_check " path:str : command =>
+  checkImpl path.getString none
+
+elab "dbt_check " path:str " accepting " waiversPath:str : command =>
+  checkImpl path.getString (some waiversPath.getString)
 
 end Shed.Sys.Dbt

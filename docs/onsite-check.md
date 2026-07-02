@@ -52,6 +52,24 @@ manifest.json は機密(テーブル名・カラム名・コンパイル済み S
    カスタム規則を書くときは `Project.depType`(依存先の種別)と
    `NodeType.isRaw` が公開されているので再実装は不要。
 
+6. 意図的な設計判断としての違反(例: mart 層によるマスタ source の直読み)は
+   **受容宣言**で表明する。宣言ファイル(JSON、リポジトリにコミットする)を書き:
+
+   ```json
+   [{"model": "model.pkg.dim_area",
+     "dep": "source.pkg.gsheet.master",
+     "reason": "gsheet マスタは staging 化の対象外とする設計判断(2026-07)"}]
+   ```
+
+   ```lean
+   dbt_check "対象プロジェクト/target/manifest.json" accepting "waivers.json"
+   ```
+
+   - `reason` は必須。理由を書けない例外は受容ではなく放置
+   - **未使用の宣言もコンパイルエラー**になる(違反が解消されたら宣言も消す。
+     受容リストの腐敗防止)
+   - これで「コンパイルが通る = 未処理の違反ゼロ + 全例外が署名済み + 例外リストが実態と一致」になる
+
 ## 持ち帰ってよい情報(shed への還流)
 
 機密を含まない「道具への苦情」だけを持ち帰る:
