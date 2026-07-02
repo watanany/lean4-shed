@@ -84,4 +84,43 @@ def main : IO Unit := do
   catch _ => pure true
   check "Worker: shutdown 後の呼び出しはエラー" failed
 
+  -- callRaw: タイムアウトで kill され IO.userError(bounded-by-default)
+  let t0 ← IO.monoMsNow
+  let timedOut ← try
+    discard <| callRaw { exe := "sleep", args := #["30"] } (timeoutSec := 1)
+    pure false
+  catch _ => pure true
+  let elapsedMs := (← IO.monoMsNow) - t0
+  check "callRaw: タイムアウトは IO.userError" timedOut
+  check s!"callRaw: 打ち切りは期限近傍で起きる({elapsedMs}ms)" (elapsedMs < 5000)
+
+  -- Worker: 応答しないワーカーはタイムアウトで kill され、以後はエラー
+  let slowWorkerPy :=
+    "import sys, json, time
+for line in sys.stdin:
+    time.sleep(30)
+    print(json.dumps({'late': True}), flush=True)"
+  withWorker { exe := "python3", args := #["-c", slowWorkerPy] } fun w => do
+    let timedOut ← try
+      discard <| w.callJson (Lean.Json.mkObj []) (timeoutSec := 1)
+      pure false
+    catch _ => pure true
+    check "Worker: 応答なしはタイムアウトで IO.userError" timedOut
+    let failedAfter ← try
+      discard <| w.callJson (Lean.Json.mkObj [])
+      pure false
+    catch _ => pure true
+    check "Worker: タイムアウト後の呼び出しはエラー(kill 済み)" failedAfter
+
+  -- Worker: EOF を無視するワーカーでも shutdown が固まらない(kill 保険)
+  let stubbornPy :=
+    "import sys, time
+sys.stdin.read()
+time.sleep(30)"
+  let w ← Worker.spawn { exe := "python3", args := #["-c", stubbornPy] }
+  let t0 ← IO.monoMsNow
+  discard <| w.shutdown (timeoutSec := 1)
+  let elapsedMs := (← IO.monoMsNow) - t0
+  check s!"Worker: EOF 無視でも shutdown が戻る({elapsedMs}ms)" (elapsedMs < 5000)
+
   IO.println "スモークテスト全件成功"

@@ -19,7 +19,7 @@ import Shed.Sys.Subprocess
 
 ## 有界性の注意
 
-タイムアウトは未実装(サブプロセス層と同じ判断)。
+サブプロセス層のタイムアウト(既定 120 秒、`0` で無制限)を引き継ぐ。
 -/
 
 namespace Shed.Sys.Py
@@ -41,12 +41,13 @@ let r ← Py.callJson "sorted(set(data))" (Lean.toJson #[3, 1, 3, 2])
 -- r = [1, 2, 3]
 ```
 -/
-def callJson (snippet : String) (input : Json) : IO Json :=
-  callJsonRaw { exe := "python3", args := #["-c", bootstrap, snippet] } input
+def callJson (snippet : String) (input : Json) (timeoutSec : Nat := 120) : IO Json :=
+  callJsonRaw { exe := "python3", args := #["-c", bootstrap, snippet] } input timeoutSec
 
 /-- 型付き版。入出力の契約は Lean の型(`ToJson` / `FromJson`)。 -/
-def call [Lean.ToJson α] [Lean.FromJson β] (snippet : String) (input : α) : IO β := do
-  let json ← callJson snippet (Lean.toJson input)
+def call [Lean.ToJson α] [Lean.FromJson β] (snippet : String) (input : α)
+    (timeoutSec : Nat := 120) : IO β := do
+  let json ← callJson snippet (Lean.toJson input) timeoutSec
   match Lean.fromJson? json with
   | .ok b => pure b
   | .error e =>

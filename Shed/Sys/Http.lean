@@ -64,10 +64,15 @@ private def parseOutput (out : IO.Process.Output) : IO Response := do
   let lines := out.stdout.splitOn "\n"
   let statusStr := lines.getLastD ""
   let body := String.intercalate "\n" lines.dropLast
-  match statusStr.trim.toNat? with
+  match statusStr.trimAscii.toString.toNat? with
   | some status => pure { status, body }
   | none =>
     throw <| IO.userError s!"Shed.Sys.Http: ステータスコードが読めない: {statusStr}"
+
+/-- curl 自身の `--max-time` が第一の境界。外側のサブプロセス打ち切りは
+起動オーバーヘッド分の余裕を足した保険(`0` = 無制限はそのまま伝える)。 -/
+private def outerTimeout (timeoutSec : Nat) : Nat :=
+  if timeoutSec == 0 then 0 else timeoutSec + 10
 
 /--
 GET リクエスト。タイムアウト既定 30 秒、リダイレクト追従。
@@ -75,7 +80,8 @@ HTTP エラーステータスは例外にしない(`Response.ok` で判定する
 -/
 def get (url : String) (headers : Array (String × String) := #[])
     (timeoutSec : Nat := 30) : IO Response := do
-  parseOutput (← callRaw (curlCmd url headers timeoutSec #[]))
+  parseOutput (← callRaw (curlCmd url headers timeoutSec #[])
+    (timeoutSec := outerTimeout timeoutSec))
 
 /--
 JSON を POST する。`Content-Type: application/json` は自動で付く。
@@ -85,6 +91,6 @@ def postJson (url : String) (payload : Json)
     (timeoutSec : Nat := 30) : IO Response := do
   let cmd := curlCmd url (#[("Content-Type", "application/json")] ++ headers)
     timeoutSec #["-X", "POST", "--data-binary", "@-"]
-  parseOutput (← callRaw cmd payload.compress)
+  parseOutput (← callRaw cmd payload.compress (timeoutSec := outerTimeout timeoutSec))
 
 end Shed.Sys.Http
