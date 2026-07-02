@@ -13,7 +13,11 @@ cache.nixos.org と hydra.nixos.org に到達できることが前提。
        不一致なら対処法を示して失敗する(黙って別の版を入れない)
   2. narinfo の References を再帰的に辿って closure 全体を列挙
   3. 各 NAR (zstd/xz 圧縮) をダウンロードし、NAR 形式を自前でパースして /nix/store に展開
-  4. `elan toolchain link` で公式名 (leanprover/lean4:vX.Y.Z) として登録
+  4. `elan toolchain link` で公式名 (leanprover/lean4:vX.Y.Z) として登録。
+     elan が無い環境(elan 自体の配布も遮断されている隔離環境)では
+     /usr/local/bin への symlink で代替する(lake / lean が直接使える)
+
+前提コマンド: curl / zstd / xz(冒頭の preflight で確認する)
 
 **toolchain を更新するとき**: lean-toolchain を書き換えたら、新しい版の
 store path を PINNED に追記すること(Hydra の
@@ -231,7 +235,39 @@ def install_path(store_hash_name):
     return refs
 
 
+def preflight():
+    """依存コマンドの事前確認。650MB 落としてから素の Traceback で死なないため。"""
+    import shutil
+    missing = [c for c in ("curl", "zstd", "xz") if shutil.which(c) is None]
+    if missing:
+        sys.exit(
+            f"必要なコマンドがありません: {', '.join(missing)}\n"
+            f"例: apt-get install -y {' '.join(missing).replace('xz', 'xz-utils')}"
+        )
+    if shutil.which("elan") is None:
+        print("注意: elan が見つからない。展開後は /usr/local/bin への symlink で代替する")
+
+
+def register(actual, lean_dir):
+    """toolchain を使える状態にする。elan があれば公式名で link、
+    無い隔離環境では /usr/local/bin に symlink する(lake / lean が直接使える)。"""
+    import shutil
+    if shutil.which("elan"):
+        # 公式名で link しておくと lean-toolchain ファイルがそのまま解決される
+        subprocess.run(["elan", "toolchain", "link", actual, lean_dir], check=True)
+        print(f"elan に登録完了: {actual} -> {lean_dir}")
+        return
+    bin_dir = "/usr/local/bin"
+    for tool in sorted(os.listdir(f"{lean_dir}/bin")):
+        dst = os.path.join(bin_dir, tool)
+        if os.path.lexists(dst):
+            os.remove(dst)
+        os.symlink(f"{lean_dir}/bin/{tool}", dst)
+    print(f"elan なしのため {bin_dir} に symlink した(lake / lean が直接使える)")
+
+
 def main():
+    preflight()
     os.makedirs(STORE, exist_ok=True)
     want = wanted_toolchain()
     print(f"lean-toolchain: {want}")
@@ -254,9 +290,7 @@ def main():
     actual = f"leanprover/lean4:v{m.group(1)}"
     if actual != want:
         sys.exit(f"取得したバイナリの版 {actual} が lean-toolchain の {want} と一致しない")
-    # 公式名で link しておくと lean-toolchain ファイルがそのまま解決される
-    subprocess.run(["elan", "toolchain", "link", actual, lean_dir], check=True)
-    print(f"elan に登録完了: {actual} -> {lean_dir}")
+    register(actual, lean_dir)
 
 
 if __name__ == "__main__":
