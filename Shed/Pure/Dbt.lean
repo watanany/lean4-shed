@@ -6,8 +6,8 @@ import Lean.Data.Json
 **正本の向きに注意**: `Shed.Pure.Contract` は「Lean が正本 → dbt を生成」だが、
 こちらは逆向き — **dbt(SQL)が正本**であり、dbt が吐く manifest.json を
 Lean に取り込んで、dbt tests では書けない検証(プロジェクト構造・レイヤー規約)
-を行う。実プロジェクトでは dbt が既にチームの正本なので、Lean は下流の
-検証・理解レイヤーとして足跡ゼロで座る。
+を行う。実プロジェクトでは dbt が既にチームの正本なので、Lean は
+既存パイプラインに変更を求めない下流の検証・理解レイヤーとして導入できる。
 
 - 取り込みは `Shed.Sys.Dbt` のコマンド(`def_dbt_project` / `dbt_check`)が行う
 - ここは pure: manifest JSON の解釈と、規則(`Rule`)の定義のみ

@@ -13,13 +13,13 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 外部接続の主経路はサブプロセス + JSON。FFI は原則使わない。
 重い処理系(DataFrame・DB)は移植せず、型付き契約でサブプロセスとして運転する。
 
-| モジュール | 何 | 消費者 |
+| モジュール | 内容 | 消費者 |
 |---|---|---|
 | `Pure.Contract` | データ契約の正本 → dbt / JSON Schema 生成 | `examples/Contracts.lean` |
 | `Pure.Dbt` + `Sys.Dbt` | dbt manifest のコンパイル時取り込みと規約検証 | `examples/DbtChecks.lean` |
 | `Pure.Glob` + `Sys.Os` | glob 照合と走査 | `tests/OsLogTest.lean` |
 | `Sys.Subprocess` / `Sys.Worker` | 単発 / 常駐のサブプロセス + JSON | `tests/Smoke.lean` |
-| `Sys.Http` | requests 相当の8割(curl、既定 30 秒) | `tests/HttpTest.lean` |
+| `Sys.Http` | requests 相当の8割(curl、タイムアウト既定 30 秒) | `tests/HttpTest.lean` |
 | `Sys.Data` | DuckDB の運転(SQL → 型付き行) | `tests/DataTest.lean` |
 | `Sys.Py` | Python 脱出ハッチ(型は Lean のまま) | `tests/DataTest.lean` |
 | `Sys.Log` | ISO 8601 + レベルの最小ロガー | `tests/OsLogTest.lean` |
@@ -95,8 +95,8 @@ lake env lean --run examples/Contracts.lean examples/out
 
 ## dbt manifest の取り込み(`Shed.Pure.Dbt` / `Shed.Sys.Dbt`)
 
-逆向き — **dbt(SQL)が正本**のプロジェクトでは、manifest.json を
-コンパイル時に Lean へ取り込み、dbt tests では書けない検証
+契約カーネルとは逆向きに、**dbt(SQL)を正本とする**プロジェクトでは
+manifest.json をコンパイル時に Lean へ取り込み、dbt tests では書けない検証
 (リネージ・レイヤー規約)を行う:
 
 ```lean
@@ -108,7 +108,7 @@ def_dbt_project proj from "path/to/target/manifest.json"
 dbt_check "path/to/target/manifest.json"
 ```
 
-既存の dbt プロジェクトへの足跡はゼロ(manifest を読むだけ)。
+既存の dbt プロジェクト側に変更は要らない(manifest を読むだけ)。
 消費者: [examples/DbtChecks.lean](examples/DbtChecks.lean)。
 
 ## ビルドとテスト
@@ -154,5 +154,5 @@ for line in sys.stdin:
 
 ## 開発環境
 
-`lean-toolchain`(elan)で安定版最新に固定。通常は elan があれば何もしなくてよい。
+`lean-toolchain`(elan)で安定版最新に固定。elan が入っていれば追加の準備は不要。
 elan の配布サーバーに到達できない隔離環境では `scripts/setup-lean-nix.py` を参照。
