@@ -57,8 +57,8 @@ manifest.json は機密(テーブル名・カラム名・コンパイル済み S
 
    ```json
    [{"model": "model.pkg.dim_area",
-     "dep": "source.pkg.gsheet.master",
-     "reason": "gsheet マスタは staging 化の対象外とする設計判断(2026-07)"}]
+     "dep": "source.pkg.master_data",
+     "reason": "マスタデータは staging 化の対象外とする設計判断(2026-07)"}]
    ```
 
    ```lean
