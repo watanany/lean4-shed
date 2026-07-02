@@ -27,7 +27,9 @@ withRe fun re => do
 ## 有界性の注意
 
 Python `re` はバックトラック型なので、病的なパターン(指数的後戻り)は
-戻らない。線形時間が必要な文脈(信頼できない入力・純粋文脈の規則述語)の
+自力では戻らないが、ワーカー層のタイムアウト(既定 120 秒)が backstop に
+なる — 時間切れでワーカーごと kill され `IO.userError`(その `Re` は以後
+使えない)。線形時間が必要な文脈(信頼できない入力・純粋文脈の規則述語)の
 ための `Pure.Regex`(正規言語の部分集合、PikeVM)は実需が立った時に併設する。
 -/
 
@@ -62,6 +64,16 @@ structure Match where
   /-- 名前付きグループ(`(?P<name>...)`)-/
   named : Array (String × Option String)
   deriving Repr, Inhabited
+
+/-- 名前付きグループの値を引く(そのグループが無い・未マッチなら `none`)。 -/
+def Match.named? (m : Match) (key : String) : Option String :=
+  m.named.find? (·.1 == key) |>.bind (·.2)
+
+-- example: 引ける / 未マッチ腕は none / 無い名前も none
+#guard
+  let m : Match := { matched := "a@b", start := 0, stop := 3,
+                     groups := #[], named := #[("user", some "a"), ("opt", none)] }
+  m.named? "user" == some "a" && m.named? "opt" == none && m.named? "zzz" == none
 
 /-- Python ワーカー(行区切り JSON、パターンはコンパイルキャッシュ)。 -/
 private def workerPy : String :=

@@ -18,9 +18,9 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 | `Pure.Contract` | データ契約の正本 → dbt / JSON Schema 生成 | `examples/Contracts.lean` |
 | `Pure.Dbt` + `Sys.Dbt` | dbt manifest のコンパイル時取り込みと規約検証 | `examples/DbtChecks.lean` |
 | `Pure.Glob` + `Sys.Os` | glob 照合と走査 | `tests/OsLogTest.lean` |
-| `Sys.Subprocess` / `Sys.Worker` | 単発 / 常駐のサブプロセス + JSON | `tests/Smoke.lean` |
+| `Sys.Subprocess` / `Sys.Worker` | 単発 / 常駐のサブプロセス + JSON(タイムアウト既定 120 秒) | `tests/Smoke.lean` |
 | `Sys.Http` | requests 相当の8割(curl、タイムアウト既定 30 秒) | `tests/HttpTest.lean` |
-| `Sys.Data` | DuckDB の運転(SQL → 型付き行) | `tests/DataTest.lean` |
+| `Sys.Data` | DuckDB の運転(SQL → 型付き行、`insertRows` で一括投入) | `tests/DataTest.lean` |
 | `Sys.Py` | Python 脱出ハッチ(型は Lean のまま) | `tests/DataTest.lean` |
 | `Sys.Log` | ISO 8601 + レベルの最小ロガー | `tests/OsLogTest.lean` |
 | `Sys.Regex` | PCRE 級の正規表現(Python re を運転) | `tests/RegexTest.lean` |
