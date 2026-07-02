@@ -37,6 +37,24 @@ lake env lean --run examples/Contracts.lean examples/out
 契約を変えるときは Lean 側を直して生成し直す。schema.yml は手で編集しない。
 実物の dbt での検証手順は [examples/dbt/README.md](examples/dbt/README.md)。
 
+## dbt manifest の取り込み(`Shed.Pure.Dbt` / `Shed.Sys.Dbt`)
+
+逆向き — **dbt(SQL)が正本**のプロジェクトでは、manifest.json を
+コンパイル時に Lean へ取り込み、dbt tests では書けない検証
+(リネージ・レイヤー規約)を行う:
+
+```lean
+-- コンパイル時に manifest を読み込んで定数化
+def_dbt_project proj from "path/to/target/manifest.json"
+
+-- レイヤー規約(staging は生データのみ / mart は staging 経由)を
+-- コンパイル時に検査。違反があると lake build が落ちる
+dbt_check "path/to/target/manifest.json"
+```
+
+既存の dbt プロジェクトへの足跡はゼロ(manifest を読むだけ)。
+消費者: [examples/DbtChecks.lean](examples/DbtChecks.lean)。
+
 ## ビルドとテスト
 
 ```sh

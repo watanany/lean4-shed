@@ -1,0 +1,210 @@
+import Lean.Data.Json
+
+/-!
+# Shed.Pure.Dbt — dbt manifest の型と検証規則
+
+**正本の向きに注意**: `Shed.Pure.Contract` は「Lean が正本 → dbt を生成」だが、
+こちらは逆向き — **dbt(SQL)が正本**であり、dbt が吐く manifest.json を
+Lean に取り込んで、dbt tests では書けない検証(プロジェクト構造・レイヤー規約)
+を行う。実プロジェクトでは dbt が既にチームの正本なので、Lean は下流の
+検証・理解レイヤーとして足跡ゼロで座る。
+
+- 取り込みは `Shed.Sys.Dbt` のコマンド(`def_dbt_project` / `dbt_check`)が行う
+- ここは pure: manifest JSON の解釈と、規則(`Rule`)の定義のみ
+- 規則は「グラフ全体を見る検証」— dbt の data test(行を見る)では
+  表現できない層。dbt-project-evaluator 相当を素の Lean 関数として持つ
+
+## 失敗モード
+
+- manifest の構造が想定と違う → `fromManifest?` が `Except.error`
+  (dbt のバージョン更新で壊れたらここで検出される)
+-/
+
+namespace Shed.Pure.Dbt
+
+open Lean (Json ToJson FromJson toJson fromJson?)
+
+/-- dbt ノードの種別。 -/
+inductive NodeType where
+  | model
+  | seed
+  | source
+  | snapshot
+  | test
+  | other
+  deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
+
+def NodeType.ofString : String → NodeType
+  | "model" => .model
+  | "seed" => .seed
+  | "source" => .source
+  | "snapshot" => .snapshot
+  | "test" => .test
+  | _ => .other
+
+/-- manifest 上の列情報。 -/
+structure Column where
+  name : String
+  dataType : Option String := none
+  description : String := ""
+  deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
+
+/-- manifest 上のノード(モデル・シード・ソース等)。 -/
+structure Node where
+  uniqueId : String
+  name : String
+  type : NodeType
+  columns : Array Column := #[]
+  /-- 依存先の uniqueId(dbt のリネージ) -/
+  dependsOn : Array String := #[]
+  tags : Array String := #[]
+  deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
+
+/-- dbt プロジェクト(manifest の Lean 側表現)。 -/
+structure Project where
+  nodes : Array Node
+  deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
+
+namespace Project
+
+def models (p : Project) : Array Node :=
+  p.nodes.filter (·.type == .model)
+
+def find? (p : Project) (uniqueId : String) : Option Node :=
+  p.nodes.find? (·.uniqueId == uniqueId)
+
+end Project
+
+/-- JSON オブジェクトを (キー, 値) の配列に潰す。 -/
+private def objToArray (j : Json) : Array (String × Json) :=
+  match j with
+  | .obj kvs => kvs.foldl (init := #[]) fun acc k v => acc.push (k, v)
+  | _ => #[]
+
+private def strArray? (j : Json) : Array String :=
+  match j with
+  | .arr xs => xs.filterMap fun x => x.getStr?.toOption
+  | _ => #[]
+
+/-- manifest のノード 1 件を解釈する。 -/
+private def nodeFromJson (uniqueId : String) (j : Json) : Except String Node := do
+  let name ← j.getObjValAs? String "name"
+  let type := (j.getObjValAs? String "resource_type").toOption.map NodeType.ofString
+    |>.getD .other
+  let columns := objToArray (j.getObjValD "columns") |>.map fun (colName, cj) =>
+    { name := colName
+      dataType := (cj.getObjValAs? String "data_type").toOption
+      description := (cj.getObjValAs? String "description").toOption.getD "" }
+  let dependsOn := strArray? ((j.getObjValD "depends_on").getObjValD "nodes")
+  let tags := strArray? (j.getObjValD "tags")
+  pure { uniqueId, name, type, columns, dependsOn, tags }
+
+/--
+dbt の manifest.json から `Project` を構築する。
+`nodes`(モデル・シード等)と `sources` の両方を取り込む。
+-/
+def Project.fromManifest? (manifest : Json) : Except String Project := do
+  let nodesJson ← manifest.getObjVal? "nodes"
+  let mut nodes : Array Node := #[]
+  for (uid, j) in objToArray nodesJson do
+    nodes := nodes.push (← nodeFromJson uid j)
+  -- sources は manifest の別キー。ソースとして取り込む
+  for (uid, j) in objToArray (manifest.getObjValD "sources") do
+    let name := (j.getObjValAs? String "name").toOption.getD uid
+    nodes := nodes.push { uniqueId := uid, name, type := .source }
+  pure { nodes }
+
+/-- 三段命名: パース失敗で panic する版(取り込みコマンドが検証済みの入力に使う)。 -/
+def Project.parse! (s : String) : Project :=
+  match Json.parse s >>= fromJson? with
+  | .ok p => p
+  | .error e => panic! s!"Shed.Pure.Dbt.Project.parse!: {e}"
+
+-- ## レイヤー規約
+
+/-- モデルの層。 -/
+inductive Layer where
+  | staging
+  | mart
+  deriving Repr, BEq
+
+/-- プロジェクト側の命名規約。shed は道具(dbt)は知ってよいが、
+特定プロジェクトの規約は知らない — 規約はここで注入する。既定は
+dbt コミュニティの慣習(`stg_` 接頭辞)。 -/
+structure Conventions where
+  stagingPrefix : String := "stg_"
+  deriving Repr, Inhabited
+
+/-- 命名規約に基づく層の分類。 -/
+def Node.layer (n : Node) (conv : Conventions := {}) : Layer :=
+  if n.name.startsWith conv.stagingPrefix then .staging else .mart
+
+/-- 検証規則。プロジェクト全体を見て違反メッセージの列を返す。 -/
+def Rule := Project → Array String
+
+/-- 依存先ノードの種別を引く(見つからなければ uniqueId の接頭辞で推定)。 -/
+private def depType (p : Project) (uid : String) : NodeType :=
+  match p.find? uid with
+  | some n => n.type
+  | none => NodeType.ofString (uid.splitOn "." |>.headD "")
+
+/-- 規則: staging モデルは生データ(seed / source)だけに依存する。 -/
+def stagingOnlyFromRaw (conv : Conventions := {}) : Rule := fun p =>
+  p.models.filter (·.layer conv == .staging) |>.flatMap fun m =>
+    m.dependsOn.filterMap fun dep =>
+      match depType p dep with
+      | .seed | .source => none
+      | _ => some s!"{m.name}: staging モデルが生データ以外({dep})に依存している"
+
+/-- 規則: mart モデルは生データに直接依存しない(必ず staging を経由する)。 -/
+def martsNotOnRaw (conv : Conventions := {}) : Rule := fun p =>
+  p.models.filter (·.layer conv == .mart) |>.flatMap fun m =>
+    m.dependsOn.filterMap fun dep =>
+      match depType p dep with
+      | .seed | .source => some s!"{m.name}: mart モデルが生データ({dep})に直接依存している"
+      | _ => none
+
+/-- 既定の規則一式(既定の命名規約)。`dbt_check` コマンドはこれを実行する。
+プロジェクト固有の規約は `stagingOnlyFromRaw { stagingPrefix := ... }` の形で注入する。 -/
+def defaultRules : Array Rule := #[stagingOnlyFromRaw, martsNotOnRaw]
+
+/-- 全規則を実行して違反を集める。 -/
+def runRules (rules : Array Rule) (p : Project) : Array String :=
+  rules.flatMap (· p)
+
+-- ## 実行可能 example
+
+private def exampleProject : Project := {
+  nodes := #[
+    { uniqueId := "seed.pkg.raw_a", name := "raw_a", type := .seed },
+    { uniqueId := "model.pkg.stg_a", name := "stg_a", type := .model,
+      dependsOn := #["seed.pkg.raw_a"] },
+    { uniqueId := "model.pkg.report_a", name := "report_a", type := .model,
+      dependsOn := #["model.pkg.stg_a"] }
+  ]
+}
+
+-- example: 規約に沿ったプロジェクトは違反ゼロ
+#guard runRules defaultRules exampleProject == #[]
+
+-- example: 命名規約は注入できる(接頭辞を変えると分類が変わる)
+#guard (Node.layer { uniqueId := "model.pkg.base_a", name := "base_a", type := .model }
+        { stagingPrefix := "base_" }) == .staging
+
+-- example: staging がモデルに依存すると stagingOnlyFromRaw が検出する
+#guard (stagingOnlyFromRaw (conv := {}) { nodes := #[
+    { uniqueId := "model.pkg.stg_b", name := "stg_b", type := .model,
+      dependsOn := #["model.pkg.stg_a"] }] }).size == 1
+
+-- example: mart が seed に直接依存すると martsNotOnRaw が検出する
+#guard (martsNotOnRaw (conv := {}) { nodes := #[
+    { uniqueId := "seed.pkg.raw_a", name := "raw_a", type := .seed },
+    { uniqueId := "model.pkg.report_b", name := "report_b", type := .model,
+      dependsOn := #["seed.pkg.raw_a"] }] }).size == 1
+
+-- example: To/FromJson の roundtrip(取り込みコマンドの埋め込みが依存する性質)
+#guard (match (fromJson? (toJson exampleProject) : Except String Project) with
+        | .ok p => p == exampleProject
+        | .error _ => false)
+
+end Shed.Pure.Dbt

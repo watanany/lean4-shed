@@ -4,3 +4,5 @@ __pycache__/
 /examples/dbt/target/
 /examples/dbt/logs/
 /examples/dbt/*.duckdb
+/examples/dbt/.user.yml
+/examples/dbt/models/schema.yml
