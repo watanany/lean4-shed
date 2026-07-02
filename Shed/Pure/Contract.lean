@@ -90,9 +90,11 @@ def Column.dbtTests (c : Column) : Array Json := Id.run do
   if c.unique then
     tests := tests.push (Json.str "unique")
   if !c.accepted.isEmpty then
+    -- dbt 1.10+ の新形式: テスト引数は arguments 配下に置く
     tests := tests.push <| Json.mkObj
       [("accepted_values", Json.mkObj
-        [("values", Json.arr (c.accepted.map Json.str))])]
+        [("arguments", Json.mkObj
+          [("values", Json.arr (c.accepted.map Json.str))])])]
   pure tests
 
 /-- 空文字列の description は出力から落とす(生成物を汚さない)。 -/
@@ -173,7 +175,8 @@ def Model.toJsonSchema (m : Model) : Json :=
 #guard Column.dbtTests { name := "status", type := .text, accepted := #["a", "b"] }
   == #[Json.str "not_null",
        Json.mkObj [("accepted_values",
-         Json.mkObj [("values", Json.arr #[Json.str "a", Json.str "b"])])]]
+         Json.mkObj [("arguments",
+           Json.mkObj [("values", Json.arr #[Json.str "a", Json.str "b"])])])]]
 
 -- example: dbt schema.yml の最小形
 -- (mkObj はキーを辞書順に直列化する。dbt/JSON Schema には順序の意味がないので無害)

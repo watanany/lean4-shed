@@ -22,3 +22,12 @@ jobs:
 
       - name: スモークテスト
         run: lake env lean --run tests/Smoke.lean
+
+      - name: 契約の生成
+        run: lake env lean --run examples/Contracts.lean examples/out
+
+      - name: 生成した schema.yml を実物の dbt で検証
+        run: |
+          python3 -m pip install --quiet dbt-duckdb
+          cp examples/out/schema.yml examples/dbt/models/schema.yml
+          cd examples/dbt && python3 -m dbt.cli.main build --profiles-dir .

@@ -1,0 +1,6 @@
+shed_contract_check:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: check.duckdb

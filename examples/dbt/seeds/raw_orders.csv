@@ -1,0 +1,5 @@
+order_id,customer_id,status,amount,ordered_at
+101,1,placed,1200.5,2026-06-01 08:00:00
+102,2,shipped,890.0,2026-06-02 09:15:00
+103,1,completed,4500.75,2026-06-10 18:40:00
+104,3,returned,300.0,2026-06-12 11:05:00

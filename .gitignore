@@ -1,2 +1,6 @@
 /.lake
 __pycache__/
+/examples/out/
+/examples/dbt/target/
+/examples/dbt/logs/
+/examples/dbt/*.duckdb
