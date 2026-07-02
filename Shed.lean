@@ -9,6 +9,7 @@ import Shed.Sys.Py
 import Shed.Sys.Data
 import Shed.Sys.Os
 import Shed.Sys.Log
+import Shed.Sys.Regex
 
 /-!
 # Shed — Lean 4 の個人用実験バッテリー

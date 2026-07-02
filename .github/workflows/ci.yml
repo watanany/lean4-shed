@@ -29,6 +29,9 @@ jobs:
       - name: Os / Log テスト
         run: lake env lean --run tests/OsLogTest.lean
 
+      - name: Regex テスト(PCRE 級、Python re エンジン)
+        run: lake env lean --run tests/RegexTest.lean
+
       - name: Data / Py テスト(DuckDB ワーカー)
         run: |
           python3 -m pip install --quiet duckdb
