@@ -28,6 +28,10 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 Std / core に既にあるものはラップしない(一時ファイル・walkDir・環境変数・
 日時は Lean 標準を直接使う。CLAUDE.md の技術知見を参照)。
 
+横断の消費者として [examples/LogPipeline.lean](examples/LogPipeline.lean) がある —
+アクセスログを glob → 正規表現パース → DuckDB 集計 → 契約生成 → HTTP 配信検証と
+一気通貫で流すミニ ETL(上記モジュールをほぼ全部使う)。
+
 ## HTTP クライアント(`Shed.Sys.Http`)
 
 requests 相当の8割。curl サブプロセスの薄いラッパで、タイムアウトは既定 30 秒:

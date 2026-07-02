@@ -37,6 +37,9 @@ jobs:
           python3 -m pip install --quiet duckdb
           lake env lean --run tests/DataTest.lean
 
+      - name: アクセスログ・パイプライン(横断 example)
+        run: lake env lean --run examples/LogPipeline.lean
+
       - name: 契約の生成
         run: lake env lean --run examples/Contracts.lean examples/out
 
