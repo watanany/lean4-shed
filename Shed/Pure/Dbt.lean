@@ -136,9 +136,8 @@ def Project.depType (p : Project) (uid : String) : NodeType :=
 
 /-- プロジェクト側の命名規約。shed は道具(dbt)は知ってよいが、
 特定プロジェクトの規約は知らない — 規約は**述語**として注入する
-(実プロジェクトの多層命名は単一接頭辞では表現できない、という
-初回接触のフィードバックによる設計)。既定は dbt コミュニティの
-慣習(`stg_` 接頭辞)。 -/
+(単一の接頭辞では多層命名を表現できないため)。既定は
+dbt コミュニティの慣習(`stg_` 接頭辞)。 -/
 structure Conventions where
   /-- staging 層(生データの取り込み口)と見なすモデルの述語 -/
   isStaging : Node → Bool := fun n => n.name.startsWith "stg_"
@@ -200,7 +199,7 @@ def runRules (rules : Array Rule) (p : Project) : Array String :=
 structure Waiver where
   /-- 違反モデルの uniqueId(例: "model.pkg.dim_area")-/
   model : String
-  /-- 受容する依存先の uniqueId(例: "source.pkg.gsheet.master")-/
+  /-- 受容する依存先の uniqueId(例: "source.pkg.master_data")-/
   dep : String
   /-- なぜこの違反を受け入れるのか(必須)-/
   reason : String
@@ -269,12 +268,12 @@ private def exampleProject : Project := {
 -- example: 受容宣言は該当する違反を消し、残りだけが異常になる
 #guard
   let violations := #[
-    { modelId := "model.pkg.dim_a", depId := "source.pkg.gsheet.m",
+    { modelId := "model.pkg.dim_a", depId := "source.pkg.master_data",
       message := "..." : Violation },
     { modelId := "model.pkg.dim_b", depId := "seed.pkg.pref",
       message := "..." : Violation }]
   let waivers := #[
-    { model := "model.pkg.dim_a", dep := "source.pkg.gsheet.m",
+    { model := "model.pkg.dim_a", dep := "source.pkg.master_data",
       reason := "マスタの staging 化まで直読みを許容" : Waiver }]
   (applyWaivers waivers violations).1.map (·.modelId) == #["model.pkg.dim_b"]
 
