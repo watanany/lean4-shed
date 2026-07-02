@@ -26,6 +26,11 @@ jobs:
       - name: HTTP テスト(ローカルサーバー相手)
         run: lake env lean --run tests/HttpTest.lean
 
+      - name: Data / Py テスト(DuckDB ワーカー)
+        run: |
+          python3 -m pip install --quiet duckdb
+          lake env lean --run tests/DataTest.lean
+
       - name: 契約の生成
         run: lake env lean --run examples/Contracts.lean examples/out
 

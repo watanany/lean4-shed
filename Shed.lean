@@ -4,6 +4,8 @@ import Shed.Sys.Subprocess
 import Shed.Sys.Worker
 import Shed.Sys.Dbt
 import Shed.Sys.Http
+import Shed.Sys.Py
+import Shed.Sys.Data
 
 /-!
 # Shed — Lean 4 の個人用実験バッテリー

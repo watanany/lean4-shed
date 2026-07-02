@@ -30,6 +30,31 @@ let r ← postJson "https://example.com/api" (Lean.Json.mkObj [("n", (42 : Nat))
 
 4xx/5xx は例外にせず `Response.status` / `Response.ok` で判定(requests と同じ)。
 
+## DuckDB の運転(`Shed.Sys.Data`)と脱出ハッチ(`Shed.Sys.Py`)
+
+DataFrame エンジンは移植せず運転する。SQL を送り、行を型で受ける
+(要 `pip install duckdb`):
+
+```lean
+open Shed.Sys.Data
+
+structure StatusCount where
+  status : String
+  n : Nat
+  deriving Lean.FromJson
+
+withDuck fun db => do
+  db.exec "create table t as select * from 'data.csv'"
+  let counts ← db.queryAs StatusCount "select status, count(*)::int as n from t group by 1"
+  ...
+```
+
+どうしても Python が楽な処理は `Shed.Sys.Py` で(制御フローと型は Lean のまま):
+
+```lean
+let sorted : Array Nat ← Shed.Sys.Py.call "sorted(set(data))" #[3, 1, 3, 2]
+```
+
 ## 契約カーネル(`Shed.Pure.Contract`)
 
 データ契約を Lean の型で正本化し、dbt schema tests / JSON Schema を生成する:
