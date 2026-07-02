@@ -13,6 +13,20 @@ Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
 外部接続の主経路はサブプロセス + JSON。FFI は原則使わない。
 重い処理系(DataFrame・DB)は移植せず、型付き契約でサブプロセスとして運転する。
 
+| モジュール | 何 | 消費者 |
+|---|---|---|
+| `Pure.Contract` | データ契約の正本 → dbt / JSON Schema 生成 | `examples/Contracts.lean` |
+| `Pure.Dbt` + `Sys.Dbt` | dbt manifest のコンパイル時取り込みと規約検証 | `examples/DbtChecks.lean` |
+| `Pure.Glob` + `Sys.Os` | glob 照合と走査 | `tests/OsLogTest.lean` |
+| `Sys.Subprocess` / `Sys.Worker` | 単発 / 常駐のサブプロセス + JSON | `tests/Smoke.lean` |
+| `Sys.Http` | requests 相当の8割(curl、既定 30 秒) | `tests/HttpTest.lean` |
+| `Sys.Data` | DuckDB の運転(SQL → 型付き行) | `tests/DataTest.lean` |
+| `Sys.Py` | Python 脱出ハッチ(型は Lean のまま) | `tests/DataTest.lean` |
+| `Sys.Log` | ISO 8601 + レベルの最小ロガー | `tests/OsLogTest.lean` |
+
+Std / core に既にあるものはラップしない(一時ファイル・walkDir・環境変数・
+日時は Lean 標準を直接使う。CLAUDE.md の技術知見を参照)。
+
 ## HTTP クライアント(`Shed.Sys.Http`)
 
 requests 相当の8割。curl サブプロセスの薄いラッパで、タイムアウトは既定 30 秒:
