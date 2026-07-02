@@ -28,7 +28,8 @@ manifest.json は機密(テーブル名・カラム名・コンパイル済み S
    def main : IO Unit := pure ()
    ```
 
-5. staging の接頭辞が `stg_` でないプロジェクトでは規約を注入する:
+5. 命名規約が既定(`stg_` 接頭辞)と違うプロジェクトでは述語を注入する。
+   複数接頭辞なら `Conventions.ofPrefixes`、それで足りなければ任意の述語:
 
    ```lean
    import Shed.Sys.Dbt
@@ -37,13 +38,19 @@ manifest.json は機密(テーブル名・カラム名・コンパイル済み S
    def_dbt_project proj from "対象プロジェクト/target/manifest.json"
 
    def main : IO Unit := do
-     let conv : Conventions := { stagingPrefix := "base_" }
+     -- 複数接頭辞
+     let conv := Conventions.ofPrefixes #["stg_", "base_", "src_"]
+     -- あるいは任意の述語(タグ・パス・正規表現など何でも):
+     -- let conv : Conventions := { isStaging := fun n => n.tags.contains "staging" }
      let violations := runRules #[stagingOnlyFromRaw conv, martsNotOnRaw conv] proj
      for v in violations do IO.eprintln v
      if !violations.isEmpty then
        throw <| IO.userError s!"レイヤー規約違反 {violations.size} 件"
      IO.println s!"モデル {proj.models.size} 件、違反なし"
    ```
+
+   カスタム規則を書くときは `Project.depType`(依存先の種別)と
+   `NodeType.isRaw` が公開されているので再実装は不要。
 
 ## 持ち帰ってよい情報(shed への還流)
 
