@@ -31,3 +31,6 @@ jobs:
           python3 -m pip install --quiet dbt-duckdb
           cp examples/out/schema.yml examples/dbt/models/schema.yml
           cd examples/dbt && python3 -m dbt.cli.main build --profiles-dir .
+
+      - name: manifest を Lean に取り込んで検証(逆向き)
+        run: lake env lean --run examples/DbtChecks.lean
