@@ -31,7 +31,7 @@ open Shed.Pure.Dbt
 /-- manifest を読んで `Project` にする(コンパイル時用の下層ヘルパ)。 -/
 private def loadProject (path : String) : IO (Except String Project) := do
   let content ← IO.FS.readFile ⟨path⟩
-  pure (Lean.Json.parse content >>= Project.fromManifest?)
+  pure (Lean.Json.parse content >>= Project.fromManifest)
 
 /--
 `def_dbt_project <名前> from "<manifest.json>"` —

@@ -79,7 +79,8 @@
 - toolchain は `lean-toolchain` で安定版最新に固定する
 - 変更ごとに `lake build` を通す。ビルドが通らない状態でコミットしない
 - Pure 層は doc comment + `#guard` の実行可能 example、
-  Sys 層はスモークテスト(`lake env lean --run tests/Smoke.lean`)
+  Sys 層は tests/ 以下の実挙動テスト(`lake env lean --run tests/<名前>.lean`。
+  CI が全件実行する)
 - コミットは小さく、日本語メッセージで可
 - 隔離環境(elan 配布サーバー遮断)では `scripts/setup-lean-nix.py` で
   toolchain を導入する

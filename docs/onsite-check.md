@@ -69,13 +69,17 @@ manifest.json は機密(テーブル名・カラム名・コンパイル済み S
    - **未使用の宣言もコンパイルエラー**になる(違反が解消されたら宣言も消す。
      受容リストの腐敗防止)
    - これで「コンパイルが通る = 未処理の違反ゼロ + 全例外が署名済み + 例外リストが実態と一致」になる
+   - 命名規約の注入(手順 5)と併用する場合、`dbt_check ... accepting` は
+     既定規約固定なので使えない。手順 5 の `main` 内で `runRulesWith` を使う:
+     `runRulesWith waivers #[stagingOnlyFromRaw conv, martsNotOnRaw conv] proj`
+     (waivers は `Lean.fromJson?` で JSON ファイルから読む)
 
 ## 持ち帰ってよい情報(shed への還流)
 
 機密を含まない「道具への苦情」だけを持ち帰る:
 
 - manifest の取り込み成否と dbt のバージョン(dbt Fusion なら特に)。
-  失敗時は `fromManifest?` のエラーメッセージ(構造の話のみ)
+  失敗時は `fromManifest` のエラーメッセージ(構造の話のみ)
 - 違反の件数と傾向(モデル名は不要)
 - 規則・パーサが実態に合わなかった点、追加してほしい規約
 
