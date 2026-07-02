@@ -35,6 +35,11 @@ def main : IO Unit := do
   let out ← callRaw { exe := "false" }
   check "callRaw: false の exit code は非ゼロ" (out.exitCode != 0)
 
+  -- callRaw: stdin を読まない子に大きな入力(EPIPE 経路でもゾンビ化しない)
+  let big := String.join (List.replicate 100000 "0123456789")
+  let out ← callRaw { exe := "false" } big
+  check "callRaw: EPIPE 経路でも exit code が返る" (out.exitCode != 0)
+
   -- callJsonRaw: Python 経由の JSON roundtrip
   let inc : Cmd :=
     { exe := "python3"
