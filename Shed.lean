@@ -3,6 +3,7 @@ import Shed.Pure.Dbt
 import Shed.Sys.Subprocess
 import Shed.Sys.Worker
 import Shed.Sys.Dbt
+import Shed.Sys.Http
 
 /-!
 # Shed — Lean 4 の個人用実験バッテリー

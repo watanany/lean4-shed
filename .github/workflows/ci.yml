@@ -23,6 +23,9 @@ jobs:
       - name: スモークテスト
         run: lake env lean --run tests/Smoke.lean
 
+      - name: HTTP テスト(ローカルサーバー相手)
+        run: lake env lean --run tests/HttpTest.lean
+
       - name: 契約の生成
         run: lake env lean --run examples/Contracts.lean examples/out
 
