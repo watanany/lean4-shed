@@ -60,8 +60,14 @@ def callRaw (cmd : Cmd) (input : String := "") : IO IO.Process.Output := do
   -- 書き込みと同時に読み出しタスクを走らせておく(パイプ詰まり回避)
   let stdout ← IO.asTask child.stdout.readToEnd .dedicated
   let stderr ← IO.asTask child.stderr.readToEnd .dedicated
-  stdin.putStr input
-  stdin.flush
+  -- 子が stdin を読まずに先に終了すると書き込みが EPIPE で失敗し得る。
+  -- ここで throw すると子を回収(wait)できずゾンビになるため握りつぶし、
+  -- 真相は exit code と stderr に語らせる
+  try
+    stdin.putStr input
+    stdin.flush
+  catch _ =>
+    pure ()
   -- `stdin` はここが最終使用点: 参照が落ちて自動クローズ → 子プロセスに EOF
   let exitCode ← child.wait
   let stdout ← IO.ofExcept stdout.get
