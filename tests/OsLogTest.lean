@@ -22,6 +22,15 @@ def main : IO Unit := do
   let none ← Os.glob "**/*.xyz"
   check "glob: マッチなしは空" (none.isEmpty)
 
+  -- 隠しディレクトリの除外(.lake のビルド生成物を拾わない)
+  let allLeans ← Os.glob "**/*.lean"
+  check "glob: .lake / .git を歩かない"
+    (!allLeans.isEmpty &&
+      allLeans.all (fun f =>
+        !(f.toString.splitOn "/").any (fun s => s.startsWith "." && s != ".")))
+  let workflows ← Os.glob ".github/workflows/*.yml" (includeHidden := true)
+  check "glob: includeHidden で隠しディレクトリも対象になる" (workflows.size == 1)
+
   -- Log: しきい値(既定 info)で debug が抑制されること
   Log.debug "これは出ないはず"
   Log.info "これは出るはず(stderr)"
