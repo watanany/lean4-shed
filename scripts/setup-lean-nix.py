@@ -7,10 +7,17 @@
 cache.nixos.org と hydra.nixos.org に到達できることが前提。
 
 やること:
-  1. Hydra API で nixpkgs unstable の lean4 最新ビルドの store path を取得
+  1. リポジトリの lean-toolchain が要求する版を特定する
+     - PINNED に載っていればその store path(完全に再現的)
+     - 無ければ Hydra の nixpkgs unstable 最新を照会し、版が一致する場合のみ採用。
+       不一致なら対処法を示して失敗する(黙って別の版を入れない)
   2. narinfo の References を再帰的に辿って closure 全体を列挙
   3. 各 NAR (zstd/xz 圧縮) をダウンロードし、NAR 形式を自前でパースして /nix/store に展開
   4. `elan toolchain link` で公式名 (leanprover/lean4:vX.Y.Z) として登録
+
+**toolchain を更新するとき**: lean-toolchain を書き換えたら、新しい版の
+store path を PINNED に追記すること(Hydra の
+https://hydra.nixos.org/job/nixpkgs/unstable/lean4.x86_64-linux/latest で確認できる)。
 
 使い方: sudo python3 setup-lean-nix.py
 """
@@ -26,20 +33,45 @@ CACHE = "https://cache.nixos.org"
 HYDRA = "https://hydra.nixos.org/job/nixpkgs/unstable/lean4.x86_64-linux/latest"
 STORE = "/nix/store"
 
+# lean-toolchain の版 → cache.nixos.org 上の store path(検証済みのものを固定)
+PINNED = {
+    "leanprover/lean4:v4.30.0": "9926168h3f7a2nm5qykd8nc2cvh0f004-lean4-4.30.0",
+}
+
 
 def fetch(url, accept=None):
     req = urllib.request.Request(url, headers={"Accept": accept} if accept else {})
     return urllib.request.urlopen(req, timeout=300)
 
 
-def hydra_latest_lean4():
-    """Hydra から最新 lean4 ビルドの out store path を得る。"""
+def wanted_toolchain():
+    """リポジトリの lean-toolchain が要求する版(例: leanprover/lean4:v4.30.0)。"""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lean-toolchain")
+    with open(path) as f:
+        return f.read().strip()
+
+
+def resolve_root(want):
+    """要求された版の store path 名を決める。PINNED 優先、無ければ Hydra 照会。"""
+    if want in PINNED:
+        print(f"PINNED: {want} -> {PINNED[want]}")
+        return PINNED[want]
     import json
     with fetch(HYDRA, accept="application/json") as r:
         d = json.load(r)
+    name = d["nixname"]  # 例: lean4-4.30.0
+    hydra_toolchain = "leanprover/lean4:v" + name.removeprefix("lean4-")
     out = d["buildoutputs"]["out"]["path"]
-    print(f"Hydra: {d['nixname']} -> {out}")
-    return out
+    print(f"Hydra: {name} -> {out}")
+    if hydra_toolchain != want:
+        sys.exit(
+            f"版の不一致: lean-toolchain は {want} を要求しているが、"
+            f"nixpkgs unstable の最新は {hydra_toolchain}。\n"
+            f"対処: (a) この版の store path を PINNED に追記する、"
+            f"(b) lean-toolchain を {hydra_toolchain} に更新して PINNED にも追記する。\n"
+            f"黙って別の版を入れることはしない(lake が解決できなくなるため)。"
+        )
+    return out.removeprefix("/nix/store/")
 
 
 def parse_narinfo(store_hash):
@@ -201,8 +233,9 @@ def install_path(store_hash_name):
 
 def main():
     os.makedirs(STORE, exist_ok=True)
-    root = hydra_latest_lean4()  # /nix/store/<hash>-lean4-X.Y.Z
-    root_name = root.removeprefix("/nix/store/")
+    want = wanted_toolchain()
+    print(f"lean-toolchain: {want}")
+    root_name = resolve_root(want)
     todo, done = [root_name], set()
     while todo:
         name = todo.pop()
@@ -218,10 +251,12 @@ def main():
     m = re.search(r"version (\d+\.\d+\.\d+)", ver.stdout)
     if not m:
         sys.exit("lean --version の出力からバージョンを特定できませんでした")
-    toolchain = f"leanprover/lean4:v{m.group(1)}"
+    actual = f"leanprover/lean4:v{m.group(1)}"
+    if actual != want:
+        sys.exit(f"取得したバイナリの版 {actual} が lean-toolchain の {want} と一致しない")
     # 公式名で link しておくと lean-toolchain ファイルがそのまま解決される
-    subprocess.run(["elan", "toolchain", "link", toolchain, lean_dir], check=True)
-    print(f"elan に登録完了: {toolchain} -> {lean_dir}")
+    subprocess.run(["elan", "toolchain", "link", actual, lean_dir], check=True)
+    print(f"elan に登録完了: {actual} -> {lean_dir}")
 
 
 if __name__ == "__main__":
