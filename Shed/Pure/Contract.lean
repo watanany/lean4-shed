@@ -8,7 +8,7 @@ import Lean.Data.Json
 
 - 正本はここ(Lean、機械検査される)。dbt の schema.yml や JSON Schema は生成物
 - JSON は合法な YAML なので、`Lean.Json.pretty` の出力をそのまま `.yml` として
-  dbt に食わせられる
+  dbt に読ませられる
 - 網羅しない。dbt のテストは not_null / unique / accepted_values の
   標準三点のみ(自分が使う8割)。凝った制約が必要になったら実需駆動で足す
 
@@ -61,7 +61,7 @@ def ColumnType.jsonSchemaFields : ColumnType → List (String × Json)
   | .timestamp => [("type", Json.str "string"), ("format", Json.str "date-time")]
   | .json => []
 
-/-- 列の契約。既定は「非 NULL・非ユニーク・値制約なし」= いちばん厳しい NULL 制約。
+/-- 列の契約。NULL の既定は「許さない」(not_null テストが生成される)。
 NULL を許すことこそ明示的な決定であるべき、という向き。 -/
 structure Column where
   name : String
