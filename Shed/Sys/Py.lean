@@ -41,12 +41,12 @@ let r ← Py.callJson "sorted(set(data))" (Lean.toJson #[3, 1, 3, 2])
 -- r = [1, 2, 3]
 ```
 -/
-def callJson (snippet : String) (input : Json) (timeoutSec : Nat := 120) : IO Json :=
+def callJson (snippet : String) (input : Json) (timeoutSec : Nat := defaultTimeoutSec) : IO Json :=
   callJsonRaw { exe := "python3", args := #["-c", bootstrap, snippet] } input timeoutSec
 
 /-- 型付き版。入出力の契約は Lean の型(`ToJson` / `FromJson`)。 -/
 def call [Lean.ToJson α] [Lean.FromJson β] (snippet : String) (input : α)
-    (timeoutSec : Nat := 120) : IO β := do
+    (timeoutSec : Nat := defaultTimeoutSec) : IO β := do
   let json ← callJson snippet (Lean.toJson input) timeoutSec
   match Lean.fromJson? json with
   | .ok b => pure b

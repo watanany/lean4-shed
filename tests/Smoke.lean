@@ -112,6 +112,16 @@ for line in sys.stdin:
     catch _ => pure true
     check "Worker: タイムアウト後の呼び出しはエラー(kill 済み)" failedAfter
 
+  -- Worker: 既定タイムアウトの happy path が µs 級のまま(退行トリップワイヤ)。
+  -- ポーリングが一定間隔 sleep に退化すると 1 往復 ≥10ms → 200 往復で 2 秒超になる
+  withWorker { exe := "python3", args := #["-c", echoWorkerPy] } fun w => do
+    discard <| w.callJson (Lean.Json.mkObj [])  -- ウォームアップ
+    let t0 ← IO.monoMsNow
+    for i in [0:200] do
+      discard <| w.callJson (Lean.Json.mkObj [("i", (i : Nat))])
+    let elapsedMs := (← IO.monoMsNow) - t0
+    check s!"Worker: 既定タイムアウトでも 200 往復が高速({elapsedMs}ms)" (elapsedMs < 1000)
+
   -- Worker: EOF を無視するワーカーでも shutdown が固まらない(kill 保険)
   let stubbornPy :=
     "import sys, time

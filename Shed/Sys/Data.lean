@@ -87,7 +87,7 @@ db.query "select * from t where name = ? and n > ?"
 ```
 -/
 def Duck.query (db : Duck) (sql : String) (params : Array Json := #[])
-    (timeoutSec : Nat := 120) : IO (Array Json) := do
+    (timeoutSec : Nat := defaultTimeoutSec) : IO (Array Json) := do
   let res ← db.worker.callJson
     (Json.mkObj [("sql", Json.str sql), ("params", Json.arr params)])
     timeoutSec
@@ -102,12 +102,12 @@ def Duck.query (db : Duck) (sql : String) (params : Array Json := #[])
 
 /-- 結果を返さない SQL(DDL / DML)を実行する。 -/
 def Duck.exec (db : Duck) (sql : String) (params : Array Json := #[])
-    (timeoutSec : Nat := 120) : IO Unit :=
+    (timeoutSec : Nat := defaultTimeoutSec) : IO Unit :=
   discard (db.query sql params timeoutSec)
 
 /-- 型付きクエリ。各行を `FromJson` で再検証する(契約の正本は Lean の型)。 -/
 def Duck.queryAs (β : Type) [Lean.FromJson β] (db : Duck) (sql : String)
-    (params : Array Json := #[]) (timeoutSec : Nat := 120) : IO (Array β) := do
+    (params : Array Json := #[]) (timeoutSec : Nat := defaultTimeoutSec) : IO (Array β) := do
   let rows ← db.query sql params timeoutSec
   rows.mapM fun row =>
     match Lean.fromJson? row with
@@ -121,7 +121,7 @@ def Duck.queryAs (β : Type) [Lean.FromJson β] (db : Duck) (sql : String)
 1 行 = 1 往復を避ける)。列はテーブル定義と**名前**で突き合わせるため、
 行オブジェクトのキー順は問わない。
 
-`table` は識別子としてそのまま埋め込む(値ではない)。テーブルは事前に
+`table` は識別子として(`"` をエスケープした上で)埋め込む。テーブルは事前に
 `exec "create table ..."` で作っておくこと。
 
 ```
@@ -129,13 +129,16 @@ db.insertRows "access_log" (rows.map Lean.toJson)
 ```
 -/
 def Duck.insertRows (db : Duck) (table : String) (rows : Array Json)
-    (timeoutSec : Nat := 120) : IO Unit := do
+    (timeoutSec : Nat := defaultTimeoutSec) : IO Unit := do
   if rows.isEmpty then
     return
   IO.FS.withTempFile fun h path => do
     h.putStr (Json.arr rows).compress
     h.flush
-    db.exec s!"insert into \"{table}\" by name select * from read_json('{path}', format = 'array')"
+    -- 識別子は `"` を二重化、パス(SQL 文字列リテラル)は `'` を二重化して埋める
+    let ident := "\"" ++ table.replace "\"" "\"\"" ++ "\""
+    let file := path.toString.replace "'" "''"
+    db.exec s!"insert into {ident} by name select * from read_json('{file}', format = 'array')"
       #[] timeoutSec
 
 end Shed.Sys.Data
