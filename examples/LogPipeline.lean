@@ -66,7 +66,7 @@ def logPattern : String :=
   r#"^(?P<ip>\S+) \S+ \S+ \[(?P<ts>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>\S+)[^"]*" (?P<status>\d{3}) (?P<bytes>\d+|-)$"#
 
 /-- 1 行をパースする(形式外の行は `none`)。 -/
-def parseLine (re : Regex.Re) (line : String) : IO (Option LogRow) := do
+def parseLine? (re : Regex.Re) (line : String) : IO (Option LogRow) := do
   let some m ← re.find? logPattern line | return none
   let some ip := m.named? "ip" | return none
   let some method := m.named? "method" | return none
@@ -112,7 +112,7 @@ def main (args : List String) : IO Unit := do
         for line in (← IO.FS.lines f) do
           if line.trimAscii.isEmpty then
             continue
-          match ← parseLine re line with
+          match ← parseLine? re line with
           | some r => rows := rows.push r
           | none =>
             malformed := malformed + 1
@@ -178,12 +178,13 @@ def main (args : List String) : IO Unit := do
   try
     let mut up := false
     for _ in [0:50] do
-      if !up then
-        try
-          let r ← Http.get "http://127.0.0.1:18790/" (timeoutSec := 2)
-          if r.ok then up := true
-        catch _ =>
-          IO.sleep 100
+      if up then break
+      try
+        let r ← Http.get "http://127.0.0.1:18790/" (timeoutSec := 2)
+        if r.ok then up := true
+      catch _ =>
+        pure ()
+      unless up do IO.sleep 100
     check "HTTP: 配信サーバーが起動した" up
 
     let r ← Http.get "http://127.0.0.1:18790/stg_access_log.schema.json"
