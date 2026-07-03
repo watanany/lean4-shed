@@ -105,4 +105,32 @@ def main : IO Unit := do
     let counts ← db.query "select count(*)::int as c from bulk"
     check "insertRows: 空配列は no-op" ((counts[0]!.getObjValD "c").getNat?.toOption == some 3)
 
+    -- テーブル名の " はエスケープされる(識別子を閉じて SQL を注入できない)
+    db.exec "create table \"we\"\"ird\" (id int)"
+    db.insertRows "we\"ird" #[Json.mkObj [("id", Lean.toJson (1 : Nat))]]
+    let counts ← db.query "select count(*)::int as c from \"we\"\"ird\""
+    check "insertRows: \" を含むテーブル名も安全" ((counts[0]!.getObjValD "c").getNat?.toOption == some 1)
+
+    -- タイムアウト: 重いクエリは打ち切られ、その Duck は以後使えない(doc の主張を固定)
+    -- ※ withDuck の最後に置く(ワーカーが kill されるため)
+    let timedOut ← try
+      discard <| db.query
+        "select max(a.range * b.range) from range(1000000) a, range(100000) b"
+        #[] (timeoutSec := 1)
+      pure false
+    catch _ => pure true
+    check "query: タイムアウトで打ち切られる" timedOut
+    let deadAfter ← try
+      discard <| db.query "select 1"
+      pure false
+    catch _ => pure true
+    check "query: タイムアウト後の Duck は使えない" deadAfter
+
+  -- Py: タイムアウト(式が返らない場合も既定有界の範囲で打ち切られる)
+  let pyTimedOut ← try
+    discard <| Py.callJson "__import__('time').sleep(30)" (Json.mkObj []) (timeoutSec := 1)
+    pure false
+  catch _ => pure true
+  check "Py.callJson: タイムアウトは IO.userError" pyTimedOut
+
   IO.println "Data / Py テスト全件成功"
