@@ -1,36 +1,59 @@
 # shed
 
-Lean 4 の個人用実験バッテリー。*Tools I needed twice.*
+Lean 4 でスクリプト的な日常作業を書くための個人用ライブラリ。*Tools I needed twice.*
 
-中心目的: AI 経由の仕事に「機械検査される小さな正本」という固定点を与えること。
-規約は [CLAUDE.md](CLAUDE.md)、設計の経緯は [docs/design.md](docs/design.md)。
+HTTP・正規表現・SQL(DuckDB)・glob・ログといった「いつも欲しくなる部品」と、
+データエンジニアリング(dbt 連携)向けの道具を収める。
 
-## 構成
+## 特徴
 
-- `Shed.Pure.*` — Lean のみで完結し検証可能なコード
-- `Shed.Sys.*` — 外部依存(サブプロセス等)を伴うコード
+- **エンジンは運転する** — DB や正規表現エンジンを Lean で再実装しない。
+  DuckDB や Python をサブプロセスとして裏で走らせ、型付きの JSON でやり取りする
+- **8 割で十分** — Python の同等ライブラリとの機能網羅は目指さない。
+  「自分が使う 8 割のケースを 2 割の API で」
+- **既定で安全側** — IO にはタイムアウトの既定値がある(HTTP 30 秒、
+  サブプロセス 120 秒)。無制限にするには `timeoutSec := 0` の明示が必要
+- **全 API に動く使用例** — すべてのモジュールが examples/ か tests/ に
+  実行可能な使用例を持ち、CI が全件実行する
 
-外部接続の主経路はサブプロセス + JSON。FFI は原則使わない。
-重い処理系(DataFrame・DB)は移植せず、型付き契約でサブプロセスとして運転する。
+## インストール
 
-| モジュール | 内容 | 消費者 |
-|---|---|---|
-| `Pure.Contract` | データ契約の正本 → dbt / JSON Schema 生成 | `examples/Contracts.lean` |
-| `Pure.Dbt` + `Sys.Dbt` | dbt manifest のコンパイル時取り込みと規約検証 | `examples/DbtChecks.lean` |
-| `Pure.Glob` + `Sys.Os` | glob 照合と走査 | `tests/OsLogTest.lean` |
-| `Sys.Subprocess` / `Sys.Worker` | 単発 / 常駐のサブプロセス + JSON | `tests/Smoke.lean` |
-| `Sys.Http` | requests 相当の8割(curl、タイムアウト既定 30 秒) | `tests/HttpTest.lean` |
-| `Sys.Data` | DuckDB の運転(SQL → 型付き行) | `tests/DataTest.lean` |
-| `Sys.Py` | Python 脱出ハッチ(型は Lean のまま) | `tests/DataTest.lean` |
-| `Sys.Log` | ISO 8601 + レベルの最小ロガー | `tests/OsLogTest.lean` |
-| `Sys.Regex` | PCRE 級の正規表現(Python re を運転) | `tests/RegexTest.lean` |
+### 前提
 
-Std / core に既にあるものはラップしない(一時ファイル・walkDir・環境変数・
-日時は Lean 標準を直接使う。CLAUDE.md の技術知見を参照)。
+- [elan](https://github.com/leanprover/elan)(Lean のバージョン管理。
+  使う Lean は `lean-toolchain` が自動解決する)
+- モジュールによっては外部コマンドを使う:
 
-## HTTP クライアント(`Shed.Sys.Http`)
+| 使いたいもの | 追加で必要なもの |
+|---|---|
+| `Sys.Http` | curl |
+| `Sys.Regex` / `Sys.Py` | python3 |
+| `Sys.Data` | python3 + `pip install duckdb` |
+| それ以外(Pure 層・glob・ログなど) | なし |
 
-requests 相当の8割。curl サブプロセスの薄いラッパで、タイムアウトは既定 30 秒:
+### Lake プロジェクトから使う
+
+`lakefile.toml` に追加して `import Shed`:
+
+```toml
+[[require]]
+name = "shed"
+git = "https://github.com/watanany/lean4-shed"
+rev = "main"
+```
+
+### リポジトリ単体で試す
+
+```sh
+git clone https://github.com/watanany/lean4-shed
+cd lean4-shed
+lake build
+lake env lean --run tests/Smoke.lean
+```
+
+## 使い方
+
+HTTP GET(4xx/5xx は例外にせず `Response.ok` / `status` で判定):
 
 ```lean
 open Shed.Sys.Http
@@ -39,16 +62,9 @@ let r ← get "https://example.com/api" (headers := #[("X-Token", "...")])
 if r.ok then
   let json ← IO.ofExcept r.json
   ...
-
-let r ← postJson "https://example.com/api" (Lean.Json.mkObj [("n", (42 : Nat))])
 ```
 
-4xx/5xx は例外にせず `Response.status` / `Response.ok` で判定(requests と同じ)。
-
-## DuckDB の運転(`Shed.Sys.Data`)と脱出ハッチ(`Shed.Sys.Py`)
-
-DataFrame エンジンは移植せず運転する。SQL を送り、行を型で受ける
-(要 `pip install duckdb`):
+SQL で集計して Lean の型で受け取る:
 
 ```lean
 open Shed.Sys.Data
@@ -60,118 +76,73 @@ structure StatusCount where
 
 withDuck fun db => do
   db.exec "create table t as select * from 'data.csv'"
-  let counts ← db.queryAs StatusCount "select status, count(*)::int as n from t group by 1"
+  let counts ← db.queryAs StatusCount
+    "select status, count(*)::int as n from t group by 1"
   ...
 ```
 
-どうしても Python が楽な処理は `Shed.Sys.Py` で(制御フローと型は Lean のまま):
+全機能を通しで見るには [examples/LogPipeline.lean](examples/LogPipeline.lean) —
+アクセスログを「glob で発見 → 正規表現でパース → DuckDB で集計 → 契約生成 →
+HTTP 配信検証」と流すミニ ETL(約 200 行)。
 
-```lean
-let sorted : Array Nat ← Shed.Sys.Py.call "sorted(set(data))" #[3, 1, 3, 2]
-```
+## モジュール一覧
 
-## 正規表現(`Shed.Sys.Regex`)
+詳細は各モジュール冒頭の doc コメントにある(使い方・失敗モード・
+タイムアウトの注意がモジュールごとにまとまっている)。
 
-PCRE 級の全機能(先読み・後読み・後方参照・名前付きグループ)。
-再実装ではなく Python の `re` を常駐ワーカーとして運転するので、
-意味論は Python と完全に一致する:
+| モジュール | 内容 | 使用例 |
+|---|---|---|
+| [`Sys.Http`](Shed/Sys/Http.lean) | HTTP クライアント(curl、タイムアウト既定 30 秒) | [tests/HttpTest.lean](tests/HttpTest.lean) |
+| [`Sys.Regex`](Shed/Sys/Regex.lean) | PCRE 級の正規表現(Python re を運転) | [tests/RegexTest.lean](tests/RegexTest.lean) |
+| [`Sys.Data`](Shed/Sys/Data.lean) | DuckDB の運転(SQL → 型付き行、一括投入) | [tests/DataTest.lean](tests/DataTest.lean) |
+| [`Sys.Py`](Shed/Sys/Py.lean) | Python 脱出ハッチ(型は Lean のまま) | [tests/DataTest.lean](tests/DataTest.lean) |
+| [`Pure.Glob`](Shed/Pure/Glob.lean) + [`Sys.Os`](Shed/Sys/Os.lean) | glob 照合と走査 | [tests/OsLogTest.lean](tests/OsLogTest.lean) |
+| [`Sys.Log`](Shed/Sys/Log.lean) | ISO 8601 + レベルの最小ロガー | [tests/OsLogTest.lean](tests/OsLogTest.lean) |
+| [`Sys.Subprocess`](Shed/Sys/Subprocess.lean) / [`Sys.Worker`](Shed/Sys/Worker.lean) | 単発 / 常駐のサブプロセス + JSON(タイムアウト既定 120 秒) | [tests/Smoke.lean](tests/Smoke.lean) |
+| [`Pure.Contract`](Shed/Pure/Contract.lean) | データ契約の定義 → dbt / JSON Schema 生成 | [examples/Contracts.lean](examples/Contracts.lean) |
+| [`Pure.Dbt`](Shed/Pure/Dbt.lean) + [`Sys.Dbt`](Shed/Sys/Dbt.lean) | dbt manifest のコンパイル時取り込みと規約検証 | [examples/DbtChecks.lean](examples/DbtChecks.lean) |
+| (横断) | 上記ほぼ全部を使うミニ ETL | [examples/LogPipeline.lean](examples/LogPipeline.lean) |
 
-```lean
-open Shed.Sys.Regex
+Lean の標準ライブラリ(Std / core)に既にあるものはラップしない
+(一時ファイル・walkDir・環境変数・日時は Lean 標準を直接使う)。
 
-withRe fun re => do
-  let ok ← re.test "\\d{4}-\\d{2}-\\d{2}" "2026-07-02"
-  let m ← re.find? "(?P<user>\\w+)@(\\w+)" "taro@example"
-  let s ← re.replace "(\\w+)@(\\w+)" "taro@example" "\\2/\\1"
-  let parts ← re.split "\\s*[,、]\\s*" "a, b、c"
-```
+## 構造: Pure と Sys
 
-パターンはワーカー側でキャッシュされ、同一パターンの反復は速い。
+名前空間は 2 層に分かれている。**目安: 計算だけなら Pure、外の世界
+(ネットワーク・プロセス)に触るなら Sys**。
 
-## 契約カーネル(`Shed.Pure.Contract`)
+- **`Shed.Pure.*`** — 純粋な Lean 関数だけ。外部コマンド不要でどこでも動き、
+  `#guard` の実行可能 example がコンパイル時に検証される
+- **`Shed.Sys.*`** — 外部プロセス(curl・python3・DuckDB)をサブプロセスとして
+  運転する層。`IO` を返す。外部接続はサブプロセス + JSON が主経路で、
+  FFI は原則使わない
 
-データ契約を Lean の型で正本化し、dbt schema tests / JSON Schema を生成する:
+## dbt 連携
 
-```lean
-def stgOrders : Model := {
-  name := "stg_orders"
-  columns := #[
-    { name := "order_id", type := .integer, unique := true },
-    { name := "status", type := .text,
-      accepted := #["placed", "shipped", "completed", "returned"] } ]
-}
--- (dbtSchema #[stgOrders]).pretty をそのまま schema.yml に書き出せる
--- (JSON は合法な YAML)
-```
+データエンジニアリング向けの専用道具。**データ契約**(テーブルの列・制約に
+ついての取り決め)を**正本**(唯一の定義場所。それ以外は生成物なので手で
+編集しない)として管理する。向きは 2 つ:
 
-```sh
-lake env lean --run examples/Contracts.lean examples/out
-# → schema.yml(dbt)、<model>.schema.json(JSON Schema)
-```
+- **Lean が正本** — 契約を Lean の型で書き、dbt の schema.yml と JSON Schema を
+  生成する。[examples/Contracts.lean](examples/Contracts.lean)
+- **dbt が正本** — 既存 dbt プロジェクトの manifest.json をコンパイル時に
+  取り込み、依存関係のルールを検査する。違反があると `lake build` が落ちる。
+  [examples/DbtChecks.lean](examples/DbtChecks.lean)
 
-契約を変えるときは Lean 側を直して生成し直す。schema.yml は手で編集しない。
-実物の dbt での検証手順は [examples/dbt/README.md](examples/dbt/README.md)。
+実物の dbt に読ませて検証する手順は [examples/dbt/README.md](examples/dbt/README.md)。
 
-## dbt manifest の取り込み(`Shed.Pure.Dbt` / `Shed.Sys.Dbt`)
-
-契約カーネルとは逆向きに、**dbt(SQL)を正本とする**プロジェクトでは
-manifest.json をコンパイル時に Lean へ取り込み、dbt tests では書けない検証
-(リネージ・レイヤー規約)を行う:
-
-```lean
--- コンパイル時に manifest を読み込んで定数化
-def_dbt_project proj from "path/to/target/manifest.json"
-
--- レイヤー規約(staging は生データのみ / mart は staging 経由)を
--- コンパイル時に検査。違反があると lake build が落ちる
-dbt_check "path/to/target/manifest.json"
-```
-
-既存の dbt プロジェクト側に変更は要らない(manifest を読むだけ)。
-消費者: [examples/DbtChecks.lean](examples/DbtChecks.lean)。
-
-## ビルドとテスト
+## 開発
 
 ```sh
-lake build
-lake env lean --run tests/Smoke.lean   # python3 が必要
+lake build                              # 変更ごとに通す
+lake env lean --run tests/<名前>.lean   # テスト(CI が全件実行)
 ```
 
-## 使用例
+elan の配布サーバーに到達できない隔離環境では
+`sudo python3 scripts/setup-lean-nix.py`(Nix バイナリキャッシュ経由で導入)。
 
-単発のサブプロセス呼び出し(`Shed.Sys.Subprocess`):
+## もっと詳しく
 
-```lean
-open Shed.Sys
-
--- stdin に書いて閉じ(EOF)、stdout を読み切る
-let out ← callRaw { exe := "cat" } "hello\n"
-
--- JSON in / JSON out(exit code ≠ 0 はエラー)
-let res ← callJsonRaw
-  { exe := "python3", args := #["-c", "import sys, json; print(json.dumps(json.load(sys.stdin)))"] }
-  (Lean.Json.mkObj [("n", (42 : Nat))])
-```
-
-常駐ワーカー(`Shed.Sys.Worker`)。行区切り JSON でやり取りし、
-呼び出しは Mutex で直列化される:
-
-```lean
-withWorker { exe := "python3", args := #["-c", workerPy] } fun w => do
-  let res ← w.callJson (Lean.Json.mkObj [("id", (1 : Nat))])
-  ...
-```
-
-ワーカー側(Python)は 1 行読むごとに 1 行返し、**必ず flush する**:
-
-```python
-import sys, json
-for line in sys.stdin:
-    req = json.loads(line)
-    print(json.dumps({"echo": req}), flush=True)
-```
-
-## 開発環境
-
-`lean-toolchain`(elan)で安定版最新に固定。elan が入っていれば追加の準備は不要。
-elan の配布サーバーに到達できない隔離環境では `scripts/setup-lean-nix.py` を参照。
+- [CLAUDE.md](CLAUDE.md) — 開発規約(現在有効なルールの正本)
+- [docs/design.md](docs/design.md) — 設計の経緯(なぜこの設計なのか。追記型の記録)
+- [docs/field-report-2026-07.md](docs/field-report-2026-07.md) — 実地評価レポート

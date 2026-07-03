@@ -26,9 +26,11 @@ Python なら `print(json.dumps(...), flush=True)`。flush を忘れると
 
 ## 有界性の注意
 
-応答待ちにタイムアウトは**未実装**。行儀の悪いワーカー(応答しない・
-EOF 後も終了しない)に対しては `Worker.call` / `Worker.shutdown` は戻らない。
-実需が出た時点で打ち切りを追加する。
+**応答待ちタイムアウト既定 120 秒**(bounded-by-default、`0` で無制限)。
+時間切れは行区切りプロトコルの同期が壊れたことを意味するので、ワーカーを
+kill して `finished` に落とす(以後の呼び出しはエラー)。
+`shutdown` も既定 30 秒まで自然終了を待ち、それでも残る場合は kill する
+(EOF を無視する行儀の悪いワーカーへの保険)。
 -/
 
 namespace Shed.Sys
@@ -56,14 +58,35 @@ def Worker.spawn (cmd : Cmd) : IO Worker := do
 リクエスト JSON を 1 行書き、レスポンス JSON を 1 行読む。
 Mutex により呼び出し全体が直列化されるため、複数タスクから同時に呼んでも
 リクエストとレスポンスの対応は崩れない。
+
+タイムアウト(既定 120 秒、`0` で無制限)を超えたら、プロトコルの同期が
+壊れているためワーカーを kill して `IO.userError`(タイムアウトは
+Mutex 取得後から数える)。
 -/
-def Worker.callJson (w : Worker) (req : Lean.Json) : IO Lean.Json :=
+def Worker.callJson (w : Worker) (req : Lean.Json) (timeoutSec : Nat := defaultTimeoutSec) :
+    IO Lean.Json :=
   w.state.atomically do
     let .running stdin ← get
       | throw <| IO.userError "Shed.Sys.Worker.callJson: shutdown 済みのワーカー"
     stdin.putStr (req.compress ++ "\n")
     stdin.flush
-    let line ← w.child.stdout.getLine
+    let line ←
+      if timeoutSec == 0 then
+        w.child.stdout.getLine
+      else
+        -- 読みをタスクに逃がし、期限つきで完了をポーリングする
+        let read ← IO.asTask w.child.stdout.getLine .dedicated
+        let done ← pollDeadline timeoutSec do
+          if ← IO.hasFinished read then pure (some read.get) else pure none
+        match done with
+        | some line => IO.ofExcept line
+        | none =>
+          -- 応答と質問の対応が取れなくなったので、このワーカーは終わり
+          w.child.kill
+          let exitCode ← w.child.wait
+          set (Worker.State.finished exitCode)
+          throw <| IO.userError
+            s!"Shed.Sys.Worker.callJson: {timeoutSec} 秒以内に応答がないため打ち切った(ワーカーは kill 済み)"
     if line.isEmpty then
       throw <| IO.userError
         "Shed.Sys.Worker.callJson: ワーカーが応答前に終了した(EOF)"
@@ -73,8 +96,9 @@ def Worker.callJson (w : Worker) (req : Lean.Json) : IO Lean.Json :=
       throw <| IO.userError s!"Shed.Sys.Worker.callJson: 応答を JSON としてパースできない: {e}"
 
 /-- 型付きのワーカー呼び出し。入出力の契約は Lean の型(`ToJson` / `FromJson`)。 -/
-def Worker.call [Lean.ToJson α] [Lean.FromJson β] (w : Worker) (input : α) : IO β := do
-  let json ← w.callJson (Lean.toJson input)
+def Worker.call [Lean.ToJson α] [Lean.FromJson β] (w : Worker) (input : α)
+    (timeoutSec : Nat := defaultTimeoutSec) : IO β := do
+  let json ← w.callJson (Lean.toJson input) timeoutSec
   match Lean.fromJson? json with
   | .ok b => pure b
   | .error e =>
@@ -83,17 +107,27 @@ def Worker.call [Lean.ToJson α] [Lean.FromJson β] (w : Worker) (input : α) : 
 /--
 ワーカーを終了させ、exit code を返す。
 
-stdin ハンドルを手放すことで子プロセスに EOF を送り、自然終了を待つ
-(kill はしない)。冪等: 二度目以降は記録済みの exit code を返す。
+stdin ハンドルを手放すことで子プロセスに EOF を送り、自然終了を待つ。
+`timeoutSec`(既定 30 秒、`0` で無制限)以内に終了しなければ kill する
+(EOF を無視するワーカーで `withWorker` が固まらないための保険)。
+冪等: 二度目以降は記録済みの exit code を返す。
 -/
-def Worker.shutdown (w : Worker) : IO UInt32 :=
+def Worker.shutdown (w : Worker) (timeoutSec : Nat := 30) : IO UInt32 :=
   w.state.atomically do
     match ← get with
     | .finished exitCode => pure exitCode
     | .running _ => do
       -- stdin への参照を状態ごと捨てる → 自動クローズ → 子プロセスに EOF
       set (Worker.State.finished 0)
-      let exitCode ← w.child.wait
+      let exitCode ←
+        if timeoutSec == 0 then
+          w.child.wait
+        else do
+          match ← pollDeadline timeoutSec w.child.tryWait with
+          | some code => pure code
+          | none =>
+            w.child.kill
+            w.child.wait
       set (Worker.State.finished exitCode)
       pure exitCode
 

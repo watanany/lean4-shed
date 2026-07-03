@@ -84,4 +84,53 @@ def main : IO Unit := do
   catch _ => pure true
   check "Worker: shutdown 後の呼び出しはエラー" failed
 
+  -- callRaw: タイムアウトで kill され IO.userError(bounded-by-default)
+  let t0 ← IO.monoMsNow
+  let timedOut ← try
+    discard <| callRaw { exe := "sleep", args := #["30"] } (timeoutSec := 1)
+    pure false
+  catch _ => pure true
+  let elapsedMs := (← IO.monoMsNow) - t0
+  check "callRaw: タイムアウトは IO.userError" timedOut
+  check s!"callRaw: 打ち切りは期限近傍で起きる({elapsedMs}ms)" (elapsedMs < 5000)
+
+  -- Worker: 応答しないワーカーはタイムアウトで kill され、以後はエラー
+  let slowWorkerPy :=
+    "import sys, json, time
+for line in sys.stdin:
+    time.sleep(30)
+    print(json.dumps({'late': True}), flush=True)"
+  withWorker { exe := "python3", args := #["-c", slowWorkerPy] } fun w => do
+    let timedOut ← try
+      discard <| w.callJson (Lean.Json.mkObj []) (timeoutSec := 1)
+      pure false
+    catch _ => pure true
+    check "Worker: 応答なしはタイムアウトで IO.userError" timedOut
+    let failedAfter ← try
+      discard <| w.callJson (Lean.Json.mkObj [])
+      pure false
+    catch _ => pure true
+    check "Worker: タイムアウト後の呼び出しはエラー(kill 済み)" failedAfter
+
+  -- Worker: 既定タイムアウトの happy path が µs 級のまま(退行トリップワイヤ)。
+  -- ポーリングが一定間隔 sleep に退化すると 1 往復 ≥10ms → 200 往復で 2 秒超になる
+  withWorker { exe := "python3", args := #["-c", echoWorkerPy] } fun w => do
+    discard <| w.callJson (Lean.Json.mkObj [])  -- ウォームアップ
+    let t0 ← IO.monoMsNow
+    for i in [0:200] do
+      discard <| w.callJson (Lean.Json.mkObj [("i", (i : Nat))])
+    let elapsedMs := (← IO.monoMsNow) - t0
+    check s!"Worker: 既定タイムアウトでも 200 往復が高速({elapsedMs}ms)" (elapsedMs < 1000)
+
+  -- Worker: EOF を無視するワーカーでも shutdown が固まらない(kill 保険)
+  let stubbornPy :=
+    "import sys, time
+sys.stdin.read()
+time.sleep(30)"
+  let w ← Worker.spawn { exe := "python3", args := #["-c", stubbornPy] }
+  let t0 ← IO.monoMsNow
+  discard <| w.shutdown (timeoutSec := 1)
+  let elapsedMs := (← IO.monoMsNow) - t0
+  check s!"Worker: EOF 無視でも shutdown が戻る({elapsedMs}ms)" (elapsedMs < 5000)
+
   IO.println "スモークテスト全件成功"

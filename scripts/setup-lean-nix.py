@@ -13,7 +13,11 @@ cache.nixos.org と hydra.nixos.org に到達できることが前提。
        不一致なら対処法を示して失敗する(黙って別の版を入れない)
   2. narinfo の References を再帰的に辿って closure 全体を列挙
   3. 各 NAR (zstd/xz 圧縮) をダウンロードし、NAR 形式を自前でパースして /nix/store に展開
-  4. `elan toolchain link` で公式名 (leanprover/lean4:vX.Y.Z) として登録
+  4. `elan toolchain link` で公式名 (leanprover/lean4:vX.Y.Z) として登録。
+     elan が無い環境(elan 自体の配布も遮断されている隔離環境)では
+     /usr/local/bin への symlink で代替する(lake / lean が直接使える)
+
+前提コマンド: curl / zstd / xz(冒頭の preflight で確認する)
 
 **toolchain を更新するとき**: lean-toolchain を書き換えたら、新しい版の
 store path を PINNED に追記すること(Hydra の
@@ -24,6 +28,7 @@ https://hydra.nixos.org/job/nixpkgs/unstable/lean4.x86_64-linux/latest で確認
 
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -192,7 +197,6 @@ def install_path(store_hash_name):
     print(f"  取得: {store_hash_name} ({size / 1e6:.0f}MB, {comp})", flush=True)
     tmp = dest + ".part"
     if os.path.lexists(tmp):
-        import shutil
         shutil.rmtree(tmp) if os.path.isdir(tmp) and not os.path.islink(tmp) else os.remove(tmp)
     nar_file = f"/tmp/nar-{store_hash}{'.zst' if comp == 'zstd' else '.xz'}"
     # 長時間ストリームは途中切断され得るので、curl の resume (-C -) で
@@ -231,7 +235,53 @@ def install_path(store_hash_name):
     return refs
 
 
+def preflight():
+    """依存コマンドの事前確認。650MB 落としてから素の Traceback で死なないため。
+    返り値: elan が使えるか(登録方法の決定は register が同じ値を使う)。"""
+    missing = [c for c in ("curl", "zstd", "xz") if shutil.which(c) is None]
+    if missing:
+        sys.exit(
+            f"必要なコマンドがありません: {', '.join(missing)}\n"
+            f"例: apt-get install -y {' '.join(missing).replace('xz', 'xz-utils')}"
+        )
+    have_elan = shutil.which("elan") is not None
+    if not have_elan:
+        print("注意: elan が見つからない。展開後は /usr/local/bin への symlink で代替する")
+    return have_elan
+
+
+def register(actual, lean_dir, have_elan):
+    """toolchain を使える状態にする。elan があれば公式名で link、
+    無い隔離環境では /usr/local/bin に symlink する(lake / lean が直接使える)。
+
+    上書きしてよいのは「不在」か「/nix/store を指す symlink(過去の自分)」のみ。
+    手動インストール等の実体があれば消さずに失敗する(黙って壊さない)。"""
+    if have_elan:
+        # 公式名で link しておくと lean-toolchain ファイルがそのまま解決される
+        subprocess.run(["elan", "toolchain", "link", actual, lean_dir], check=True)
+        print(f"elan に登録完了: {actual} -> {lean_dir}")
+        return
+    bin_dir = "/usr/local/bin"
+    tools = sorted(os.listdir(f"{lean_dir}/bin"))
+    for tool in tools:  # 1 本目を張る前に全部検査する(中途半端に張らない)
+        dst = os.path.join(bin_dir, tool)
+        if os.path.lexists(dst) and not (
+            os.path.islink(dst) and os.readlink(dst).startswith(STORE + "/")
+        ):
+            sys.exit(
+                f"{dst} に既存のファイルがある(このスクリプトが張った symlink ではない)。\n"
+                f"退避してから再実行するか、elan を導入して elan 経路を使ってください"
+            )
+    for tool in tools:
+        dst = os.path.join(bin_dir, tool)
+        if os.path.lexists(dst):
+            os.remove(dst)
+        os.symlink(f"{lean_dir}/bin/{tool}", dst)
+    print(f"elan なしのため {bin_dir} に symlink した(lake / lean が直接使える)")
+
+
 def main():
+    have_elan = preflight()
     os.makedirs(STORE, exist_ok=True)
     want = wanted_toolchain()
     print(f"lean-toolchain: {want}")
@@ -254,9 +304,7 @@ def main():
     actual = f"leanprover/lean4:v{m.group(1)}"
     if actual != want:
         sys.exit(f"取得したバイナリの版 {actual} が lean-toolchain の {want} と一致しない")
-    # 公式名で link しておくと lean-toolchain ファイルがそのまま解決される
-    subprocess.run(["elan", "toolchain", "link", actual, lean_dir], check=True)
-    print(f"elan に登録完了: {actual} -> {lean_dir}")
+    register(actual, lean_dir, have_elan)
 
 
 if __name__ == "__main__":

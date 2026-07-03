@@ -8,7 +8,8 @@
 - 副目的: Lean を日常の小道具が書ける言語にする(バッテリー整備)
 - リポジトリ名 `lean4-shed` / パッケージ名 `shed` / ルート名前空間 `Shed`
 - ドキュメント・コメントは日本語。英語ドキュメントは書かない
-- 詳細設計と経緯は `docs/design.md`(作業前に必ず読む。特に追記セクション)
+- **規約の正本はこのファイル**。設計の経緯・理由は `docs/design.md`
+  (追記型の記録。作業前に追記セクションへ目を通す)
 
 ## アーキテクチャ
 - **Pure/Sys の二層構成**
@@ -25,8 +26,9 @@
    Lean の型で正本化し、dbt schema tests / JSON Schema 等を**生成**する。
    実需: dlt/dbt/Dagster によるデータ連携プロジェクト
 2. **職業標準バッテリー** — データエンジニアの日常セット。
-   Http.Client(curl)→ Sys.Data(DuckDB 運転)→ Sys.Py(型付き契約で
-   Python を呼ぶ脱出ハッチ)→ Os.Glob/Tempfile/Env・Dev.Log・Time.Iso8601(薄く)
+   Sys.Http(curl)/ Sys.Data(DuckDB 運転)/ Sys.Py(型付き契約で
+   Python を呼ぶ脱出ハッチ)/ Sys.Regex / Sys.Os.glob / Sys.Log
+   (一時ファイル・環境変数・日時は Std を直接使う)
 3. **演繹の筋トレ** — 「はず」形式化・正当化論理(休眠可、削除しない)
 
 ## 横断規約
@@ -43,8 +45,9 @@
   使われない API は削除候補に挙げる
 - **確定需要の原語は一度で完成させる**: glob・正規表現・CLI 引数のような
   「使うことが確定している原語」は 8 割で止めず、**閉じた仕様**を宣言して
-  完成させる(例: glob = fnmatch 相当で完成、正規表現 = 正規言語の範囲で完成、
-  後方参照・先読みは原理的に対象外)。8 割ルールは仕様が閉じない
+  完成させる(例: glob = fnmatch 相当で完成、正規表現 = エンジンの運転
+  `Sys.Regex` で PCRE 級を完成。線形時間が要る純粋文脈用の `Pure.Regex` は
+  実需が立ったら併設 — design.md §18)。8 割ルールは仕様が閉じない
   モジュールにのみ適用する
 - Python の同等品と機能パリティを目指さない。「自分が使う8割のケースを
   2割の API で」
@@ -71,6 +74,8 @@
 - `Child.takeStdin` は `IO (IO.FS.Handle × Child {cfg with stdin := .null})`
 - `IO.Process.Child ⟨.piped, .piped, .inherit⟩` の型パラメータ表記はそのまま通る
 - match 腕の継続行は `=>` の右の項より深くインデントする(浅いと別項扱い)
+- 構造体リテラルを関数適用の引数内で複数行に割ると、継続行のインデントが
+  浅い場合に `expected '}'` になる。複数行になる構造体は let で束縛してから渡す
 - JSON は合法な YAML: dbt の .yml には Lean の `Json.pretty` 出力をそのまま使える
 - モジュールドキュメント `/-! -/` は import より後に置く
 - 書く前に toolchain の Std を確認する(HashMap 等かなり太っている)。
@@ -78,7 +83,12 @@
 - Std / core に既にある(ラップ不要): `IO.FS.withTempFile` / `withTempDir`、
   `System.FilePath.walkDir`、`IO.getEnv`、`Std.Time`
   (`PlainDateTime.now` の toString が ISO 8601)
-- `String.drop` / `takeWhile` 等は 4.30 で `String.Slice` を返す(`.toString` が要る)
+- `String.drop` / `takeWhile` 等は 4.30 で `String.Slice` を返す(`.toString` が要る)。
+  `String.trim` は deprecated(`trimAscii` を使う。これも Slice を返す)
+- `lake env lean --run` は再ビルドしない(古い olean を読む)。
+  ライブラリを変更したら先に `lake build`
+- ポーリング待ちに一定間隔 sleep を使わない(µs 級の応答が sleep 粒度に丸まり
+  実測 222 倍退行した)。期限つき待ちは `Shed.Sys.pollDeadline`(三段バックオフ)を使う
 
 ## 開発ループ
 - toolchain は `lean-toolchain` で安定版最新に固定する

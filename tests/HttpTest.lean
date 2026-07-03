@@ -49,15 +49,16 @@ def main : IO Unit := do
   let server ← (Cmd.spawn { exe := "python3", args := #["-c", serverPy] })
     ⟨.null, .null, .inherit⟩
   try
-    -- サーバーの起動待ち(最大 5 秒、失敗したらリトライ)
+    -- サーバーの起動待ち(最大 5 秒、成功で抜ける。失敗側は必ず sleep)
     let mut up := false
     for _ in [0:50] do
-      if !up then
-        try
-          let r ← get "http://127.0.0.1:18734/" (timeoutSec := 2)
-          if r.status == 200 then up := true
-        catch _ =>
-          IO.sleep 100
+      if up then break
+      try
+        let r ← get "http://127.0.0.1:18734/" (timeoutSec := 2)
+        if r.status == 200 then up := true
+      catch _ =>
+        pure ()
+      unless up do IO.sleep 100
     check "テストサーバーが起動した" up
 
     -- GET
