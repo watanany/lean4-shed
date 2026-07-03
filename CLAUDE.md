@@ -82,6 +82,10 @@
   (`PlainDateTime.now` の toString が ISO 8601)
 - `String.drop` / `takeWhile` 等は 4.30 で `String.Slice` を返す(`.toString` が要る)。
   `String.trim` は deprecated(`trimAscii` を使う。これも Slice を返す)
+- `lake env lean --run` は再ビルドしない(古い olean を読む)。
+  ライブラリを変更したら先に `lake build`
+- ポーリング待ちに一定間隔 sleep を使わない(µs 級の応答が sleep 粒度に丸まり
+  実測 222 倍退行した)。期限つき待ちは `Shed.Sys.pollDeadline`(三段バックオフ)を使う
 
 ## 開発ループ
 - toolchain は `lean-toolchain` で安定版最新に固定する
