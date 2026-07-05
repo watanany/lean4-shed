@@ -60,16 +60,6 @@ def deckName : String := "Default"
 /-- 第1フィールドが ID のノートタイプ名。 -/
 def notetypeName : String := "基本+補足"
 
-/-- CSV 列名・Anki フィールド名・DuckDB 別名(ASCII)の対応。
-1 か所に集約し、Lean の識別子には日本語を使わず値として持つ。
-(csv列名, ankiフィールド名, duckdb別名) -/
-def fieldEntries : List (String × String × String) :=
-  [ ("ID",   "ID",   "id")
-  , ("表面", "表面", "front")
-  , ("裏面", "裏面", "back")
-  , ("補足", "補足", "note")
-  , ("ソース", "ソース", "source") ]
-
 /-! ## Pure 層 — 契約型と差分計画 -/
 
 /-- シートの 1 行(契約の正本)。フィールド名は ASCII。 -/
@@ -81,6 +71,26 @@ structure Row where
   source : String
   tags : String
   deriving Lean.FromJson, Repr, Inhabited
+
+/-- CSV 列名・Anki フィールド名・DuckDB 別名(= Row のフィールド名)の対応を
+1 か所に集約する。`get` に取り出し関数を第一級で持たせることで、Row → Anki
+の変換を文字列 match ではなく全域な関数適用で書ける(暗黙のフォールバックが
+生じない)。`rowField` は `queryAs` の `FromJson` が突き合わせる Row の
+フィールド名(= DuckDB の別名)。 -/
+structure Field where
+  csv : String
+  anki : String
+  rowField : String
+  get : Row → String
+
+/-- タグ以外の写像可能なフィールド(ID + 内容 4 列)。Lean の識別子には
+日本語を使わず、Anki フィールド名は値として持つ。 -/
+def contentFields : List Field :=
+  [ { csv := "ID",   anki := "ID",   rowField := "id",     get := Row.id }
+  , { csv := "表面", anki := "表面", rowField := "front",  get := Row.front }
+  , { csv := "裏面", anki := "裏面", rowField := "back",   get := Row.back }
+  , { csv := "補足", anki := "補足", rowField := "note",   get := Row.note }
+  , { csv := "ソース", anki := "ソース", rowField := "source", get := Row.source } ]
 
 /-- 空白区切りのタグ文字列をリストにする(連続空白は無視)。 -/
 def tagListOf (s : String) : List String :=
@@ -130,14 +140,9 @@ def plan (rows : Array Row) (existing : Array ExistingNote) : Plan := Id.run do
   return { toAdd, toUpdate, unchanged, orphanIds }
 
 /-- AnkiConnect の fields オブジェクト(tags は含めない)。
-Anki フィールド名(日本語)を fieldEntries から引いてキーにする。 -/
+各フィールドの取り出し関数を適用するだけ(文字列ディスパッチ無し)。 -/
 def Row.fieldsJson (r : Row) : Json :=
-  let get (alias_ : String) : String :=
-    match alias_ with
-    | "id" => r.id | "front" => r.front | "back" => r.back
-    | "note" => r.note | "source" => r.source | _ => ""
-  Json.mkObj <| fieldEntries.map fun (_, ankiName, alias_) =>
-    (ankiName, Json.str (get alias_))
+  Json.mkObj <| contentFields.map fun f => (f.anki, Json.str (f.get r))
 
 /-- AnkiConnect の tags 配列。 -/
 def Row.tagsJson (r : Row) : Json :=
@@ -150,9 +155,9 @@ def Row.tagsJson (r : Row) : Json :=
 DuckDB がここで落ちる(Anki に触れる前)。識別子/リテラルのクォートは
 本体の `Data.sqlIdent` / `Data.sqlStr` を使う。 -/
 def selectSql : String :=
-  let col (csv alias_ : String) : String :=
-    "coalesce(" ++ Data.sqlIdent csv ++ ", '') as " ++ Data.sqlIdent alias_
-  let cols := fieldEntries.map (fun (csv, _, alias_) => col csv alias_)
+  let col (csv rowField : String) : String :=
+    "coalesce(" ++ Data.sqlIdent csv ++ ", '') as " ++ Data.sqlIdent rowField
+  let cols := contentFields.map (fun f => col f.csv f.rowField)
               ++ [col "tags" "tags"]
   let idCol := Data.sqlIdent "ID"
   "select " ++ String.intercalate ", " cols
@@ -190,7 +195,7 @@ def invoke (action : String) (params : Json := Json.mkObj []) : IO Json := do
   IO.ofExcept (j.getObjVal? "result")
 
 /-- notesInfo の 1 要素を ExistingNote に解読する。
-Anki フィールド名(日本語)を fieldEntries から引いて読む。 -/
+Anki フィールド名(日本語)を contentFields から引いて読む。 -/
 def decodeNote (j : Json) : Except String ExistingNote := do
   let noteId ← j.getObjVal? "noteId"
   let tagsArr ← (← j.getObjVal? "tags").getArr?
@@ -198,13 +203,13 @@ def decodeNote (j : Json) : Except String ExistingNote := do
   let fields ← j.getObjVal? "fields"
   let f (ankiName : String) : Except String String := do
     (← (← fields.getObjVal? ankiName).getObjVal? "value").getStr?
-  let byAlias (alias_ : String) : Except String String :=
-    match fieldEntries.find? (fun (_, _, a) => a == alias_) with
-    | some (_, ankiName, _) => f ankiName
-    | none => .error s!"fieldEntries に別名がない: {alias_}"
+  let byField (rowField : String) : Except String String :=
+    match contentFields.find? (·.rowField == rowField) with
+    | some fld => f fld.anki
+    | none => .error s!"contentFields に該当フィールドがない: {rowField}"
   let row : Row :=
-    { id := ← byAlias "id", front := ← byAlias "front", back := ← byAlias "back"
-    , note := ← byAlias "note", source := ← byAlias "source"
+    { id := ← byField "id", front := ← byField "front", back := ← byField "back"
+    , note := ← byField "note", source := ← byField "source"
     , tags := String.intercalate " " tagList }
   return { noteId, row }
 
