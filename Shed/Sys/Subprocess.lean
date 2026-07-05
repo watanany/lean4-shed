@@ -137,7 +137,7 @@ def callJsonRaw (cmd : Cmd) (input : Lean.Json) (timeoutSec : Nat := defaultTime
     throw <| IO.userError s!"Shed.Sys.callJsonRaw: {cmd.exe} の出力を JSON としてパースできない: {e}"
 
 /--
-型付きの単発呼び出し。契約の正本は Lean の型: 入力を `ToJson` で直列化し、
+型付きの単発呼び出し。取り決めの大もとは Lean の型: 入力を `ToJson` で直列化し、
 出力を `FromJson` で再検証する。
 
 失敗モード: `callJsonRaw` のものに加えて、JSON が `β` に変換できない場合に
