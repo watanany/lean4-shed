@@ -51,3 +51,9 @@ jobs:
 
       - name: manifest を Lean に取り込んで検証(逆向き)
         run: lake env lean --run examples/DbtChecks.lean
+
+      # examples/SheetToAnki.lean は実 Anki 起動 + AnkiConnect + Google Sheets を
+      # 必要とするため CI では実行(--run)しない(手元検証専用の例)。
+      # ただし型検査(#guard 含む)は回して腐敗を防ぐ。
+      - name: SheetToAnki の型検査のみ(実行は手元専用)
+        run: lake env lean examples/SheetToAnki.lean
