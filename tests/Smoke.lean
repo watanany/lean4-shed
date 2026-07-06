@@ -112,7 +112,7 @@ for line in sys.stdin:
     catch _ => pure true
     check "Worker: タイムアウト後の呼び出しはエラー(kill 済み)" failedAfter
 
-  -- Worker: 既定タイムアウトの happy path が µs 級のまま(退行トリップワイヤ)。
+  -- Worker: 既定タイムアウトの正常系が µs 級のまま(退行を捕まえる仕掛け)。
   -- ポーリングが一定間隔 sleep に退化すると 1 往復 ≥10ms → 200 往復で 2 秒超になる
   withWorker { exe := "python3", args := #["-c", echoWorkerPy] } fun w => do
     discard <| w.callJson (Lean.Json.mkObj [])  -- ウォームアップ

@@ -25,7 +25,7 @@ structure StatusCount where
   deriving Lean.FromJson, Repr
 
 def main : IO Unit := do
-  -- Py: 脱出ハッチ(式評価 + 型の往復)
+  -- Py: 逃げ道(式評価 + 型の往復)
   let sorted : Array Nat ← Py.call "sorted(set(data))" #[3, 1, 3, 2]
   check "Py.call: sorted(set(data))" (sorted == #[1, 2, 3])
   let s : String ← Py.call "data['a'] + data['b']"
@@ -38,7 +38,7 @@ def main : IO Unit := do
   catch _ => pure true
   check "Py.callJson: Python 例外はエラーになる" failed
 
-  -- Data: DuckDB の運転
+  -- Data: DuckDB を呼んで使う
   withDuck fun db => do
     db.exec "create table orders (id int, status text, amount double)"
     db.exec "insert into orders values

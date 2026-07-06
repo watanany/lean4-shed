@@ -1,7 +1,7 @@
 import Shed.Pure.Contract
 
 /-!
-# 契約カーネルの消費者: dbt 向け成果物の生成
+# 契約の中核を使う例: dbt 向け成果物の生成
 
 データ連携プロジェクト(dlt / dbt / Dagster)の staging 層を想定した
 契約定義と、そこからの成果物生成。
@@ -13,7 +13,7 @@ import Shed.Pure.Contract
 - `<model>.schema.json` — 行単位の JSON Schema(dlt / API 境界の再検証用)
 
 契約を変えたいときはこのファイルではなく契約定義を直し、生成し直す。
-schema.yml を手で編集しない(正本はこちら)。
+schema.yml を手で編集しない(大もとはこちら)。
 -/
 
 open Shed.Pure.Contract

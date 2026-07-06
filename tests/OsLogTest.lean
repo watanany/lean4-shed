@@ -32,7 +32,7 @@ def main : IO Unit := do
   let workflows ← Os.glob ".github/workflows/*.yml" (includeHidden := true)
   check "glob: includeHidden で隠しディレクトリも対象になる" (workflows.size == 1)
 
-  -- Glob: Python の fnmatch をオラクルにした照合の突き合わせ
+  -- Glob: Python の fnmatch を答え合わせの基準にした照合
   let cases : Array (String × String) := #[
     ("*.lean", "Shed.lean"), ("*.lean", "Shed"), ("st?_*.sql", "stg_orders.sql"),
     ("data_[0-9].csv", "data_3.csv"), ("data_[0-9].csv", "data_x.csv"),

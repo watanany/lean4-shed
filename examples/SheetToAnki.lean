@@ -1,7 +1,7 @@
 import Shed
 
 /-!
-# SheetToAnki — Google Sheets を正本にした Anki デッキの片方向同期
+# SheetToAnki — Google Sheets を大もとにした Anki デッキの片方向同期
 
 シート(リンク共有の CSV エクスポート)を取得し、ID 列をキーに AnkiConnect へ
 upsert する。カードのスケジュール(間隔・期日・履歴)には一切触れない。
@@ -62,7 +62,7 @@ def notetypeName : String := "基本+補足"
 
 /-! ## Pure 層 — 契約型と差分計画 -/
 
-/-- シートの 1 行(契約の正本)。フィールド名は ASCII。 -/
+/-- シートの 1 行(取り決めの大もと)。フィールド名は ASCII。 -/
 structure Row where
   id : String
   front : String
@@ -73,17 +73,17 @@ structure Row where
   deriving Lean.FromJson, Repr, Inhabited
 
 /-- CSV 列名・Anki フィールド名・DuckDB 別名(= Row のフィールド名)の対応を
-1 か所に集約する。`get` に取り出し関数を第一級で持たせることで、Row → Anki
-の変換を文字列 match ではなく全域な関数適用で書ける(暗黙のフォールバックが
-生じない)。`rowField` は `queryAs` の `FromJson` が突き合わせる Row の
-フィールド名(= DuckDB の別名)。 -/
+1 か所にまとめる。各フィールドの取り出し関数 `get` を表に持たせておくと、
+Row → Anki の変換を文字列で場合分けせずに書ける(該当なしのとき黙って空に
+なる書き方を避けられる)。`rowField` は `queryAs` の `FromJson` が照らし合わせる
+Row のフィールド名(= DuckDB の別名)。 -/
 structure Field where
   csv : String
   anki : String
   rowField : String
   get : Row → String
 
-/-- タグ以外の写像可能なフィールド(ID + 内容 4 列)。Lean の識別子には
+/-- タグ以外の書き出すフィールド(ID + 本文 4 列)。Lean の識別子には
 日本語を使わず、Anki フィールド名は値として持つ。 -/
 def contentFields : List Field :=
   [ { csv := "ID",   anki := "ID",   rowField := "id",     get := Row.id }
@@ -166,7 +166,7 @@ def selectSql : String :=
 /-! ## Sys 層 — シート取得と CSV 解読 -/
 
 /-- CSV 本文を DuckDB に読ませ、契約型 Row の配列にする
-(CSV パーサは書かない — エンジンの運転)。 -/
+(CSV パーサは書かない — エンジンを呼んで使う)。 -/
 def loadRows (csvBody : String) : IO (Array Row) :=
   IO.FS.withTempFile fun h path => do
     h.putStr csvBody
