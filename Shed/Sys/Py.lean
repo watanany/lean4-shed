@@ -9,7 +9,7 @@ import Shed.Sys.Subprocess
 - 入力は `ToJson` で渡り、Python 側では変数 `data` に束縛される
 - スニペットは `data` を使う **式**(expression)。その評価結果が
   JSON になって返り、`FromJson` で再検証される(取り決めの大もとは Lean の型)
-- スニペットは argv 経由で渡すためクォート地獄は無い
+- スニペットは argv 経由で渡すためクォートの煩雑さは無い
 
 ## 失敗モード
 
