@@ -84,7 +84,7 @@ def main : IO Unit := do
   catch _ => pure true
   check "Worker: shutdown 後の呼び出しはエラー" failed
 
-  -- callRaw: タイムアウトで kill され IO.userError(bounded-by-default)
+  -- callRaw: タイムアウトで kill され IO.userError(既定で有界)
   let t0 ← IO.monoMsNow
   let timedOut ← try
     discard <| callRaw { exe := "sleep", args := #["30"] } (timeoutSec := 1)
@@ -112,7 +112,7 @@ for line in sys.stdin:
     catch _ => pure true
     check "Worker: タイムアウト後の呼び出しはエラー(kill 済み)" failedAfter
 
-  -- Worker: 既定タイムアウトの happy path が µs 級のまま(退行トリップワイヤ)。
+  -- Worker: 既定タイムアウトの正常系が µs 級のまま(退行を捕まえる仕掛け)。
   -- ポーリングが一定間隔 sleep に退化すると 1 往復 ≥10ms → 200 往復で 2 秒超になる
   withWorker { exe := "python3", args := #["-c", echoWorkerPy] } fun w => do
     discard <| w.callJson (Lean.Json.mkObj [])  -- ウォームアップ

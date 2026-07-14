@@ -18,7 +18,7 @@ import Lean.Data.Json
 
 ## 有界性の注意
 
-**タイムアウト既定 120 秒**(bounded-by-default)。時間内に子プロセスが
+**タイムアウト既定 120 秒**(既定で有界)。時間内に子プロセスが
 終了しなければ kill して `IO.userError`。長時間かかる正当な処理には明示的に
 大きな値を、無制限にしたければ `timeoutSec := 0` を渡す(明示こそが決定)。
 出力サイズ上限は未実装(stdout/stderr を読み切る)。
@@ -26,7 +26,7 @@ import Lean.Data.Json
 
 namespace Shed.Sys
 
-/-- IO 打ち切りの既定値(秒)。bounded-by-default の一元管理。
+/-- IO 打ち切りの既定値(秒)。「既定で有界」の一元管理。
 `timeoutSec := 0` を渡すと無制限。 -/
 def defaultTimeoutSec : Nat := 120
 
@@ -137,7 +137,7 @@ def callJsonRaw (cmd : Cmd) (input : Lean.Json) (timeoutSec : Nat := defaultTime
     throw <| IO.userError s!"Shed.Sys.callJsonRaw: {cmd.exe} の出力を JSON としてパースできない: {e}"
 
 /--
-型付きの単発呼び出し。契約の正本は Lean の型: 入力を `ToJson` で直列化し、
+型付きの単発呼び出し。取り決めの大もとは Lean の型: 入力を `ToJson` で直列化し、
 出力を `FromJson` で再検証する。
 
 失敗モード: `callJsonRaw` のものに加えて、JSON が `β` に変換できない場合に

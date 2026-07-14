@@ -1,9 +1,9 @@
 import Shed.Sys.Dbt
 
 /-!
-# dbt manifest の取り込みと検証(消費者)
+# dbt manifest の取り込みと検証(使う例)
 
-向き: **dbt(SQL)が正本** → manifest.json → Lean。
+向き: **dbt(SQL)が大もと** → manifest.json → Lean。
 dbt tests(行を見る)では書けない、プロジェクト構造への検証を行う。
 
 前提: `examples/dbt` で dbt build 済み(manifest.json が存在すること)。

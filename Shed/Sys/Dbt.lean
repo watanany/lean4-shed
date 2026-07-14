@@ -12,7 +12,7 @@ Lean の定数・検証に変換するコマンド群。IO はコンパイル時
   — manifest を読み、検証済みの `Shed.Pure.Dbt.Project` 定数を定義する
 - `dbt_check "path/to/manifest.json"`
   — 既定のレイヤー規約(`defaultRules`)をその場で実行し、
-    違反があれば**コンパイルエラー**にする。`lake build` が契約ゲートになる
+    違反があれば**コンパイルエラー**にする。`lake build` が契約の関門になる
 
 ## 失敗モード(いずれもコンパイルエラーとして現れる)
 
@@ -51,9 +51,9 @@ elab "def_dbt_project " name:ident " from " path:str : command => do
 `dbt_check "<manifest.json>"` — 既定のレイヤー規約をコンパイル時に実行し、
 違反があればコンパイルを失敗させる。
 
-`dbt_check "<manifest.json>" accepting "<waivers.json>"` — 受容宣言
+`dbt_check "<manifest.json>" accepting "<waivers.json>"` — 例外の許可
 (`Waiver` の JSON 配列。`model` / `dep` / `reason` が必須)を適用した上で
-検査する。残った違反と**未使用の宣言**の両方がコンパイルエラーになる。
+検査する。残った違反と**未使用の許可**の両方がコンパイルエラーになる。
 -/
 private def checkImpl (path : String) (waiversPath : Option String) :
     CommandElabM Unit := do
@@ -66,10 +66,10 @@ private def checkImpl (path : String) (waiversPath : Option String) :
       let content ← IO.FS.readFile ⟨wp⟩
       match Lean.Json.parse content >>= Lean.fromJson? with
       | .ok ws => pure ws
-      | .error e => throwError "dbt_check: 受容宣言 {wp} の読み込みに失敗: {e}"
+      | .error e => throwError "dbt_check: 例外の許可 {wp} の読み込みに失敗: {e}"
   let problems := runRulesWith waivers defaultRules proj
   if problems.isEmpty then
-    logInfo s!"dbt_check: モデル {proj.models.size} 件、レイヤー規約違反なし(受容宣言 {waivers.size} 件適用)"
+    logInfo s!"dbt_check: モデル {proj.models.size} 件、レイヤー規約違反なし(例外の許可 {waivers.size} 件適用)"
   else
     throwError "dbt_check: 異常 {problems.size} 件:\n{String.intercalate "\n" problems.toList}"
 

@@ -1,16 +1,17 @@
 import Lean.Data.Json
 
 /-!
-# Shed.Pure.Contract — データ契約の正本
+# Shed.Pure.Contract — データの取り決めの大もと
 
-データ契約(テーブルのスキーマ・制約)を Lean の型として一箇所で定義し、
-各ツール向けの成果物を**生成**するためのカーネル。
+データの取り決め(テーブルのスキーマ・制約)を Lean の型として一箇所で定義し、
+各ツール向けの成果物を**生成**するための中核。
 
-- 正本はここ(Lean、機械検査される)。dbt の schema.yml や JSON Schema は生成物
+- 定義の大もとはここ(Lean、機械が検査する)。dbt の schema.yml や
+  JSON Schema は生成物
 - JSON は合法な YAML なので、`Lean.Json.pretty` の出力をそのまま `.yml` として
   dbt に読ませられる
-- 網羅しない。dbt のテストは not_null / unique / accepted_values の
-  標準三点のみ(自分が使う8割)。凝った制約が必要になったら実需駆動で足す
+- 全部はそろえない。dbt のテストは not_null / unique / accepted_values の
+  基本三点のみ(自分が使う8割)。凝った制約は必要になってから足す
 
 ## 使い方の型
 
@@ -37,7 +38,7 @@ inductive ColumnType where
   | text
   | date
   | timestamp
-  /-- 構造を契約しない生 JSON 列。契約したくなったら独立した Model に昇格させる -/
+  /-- 構造を取り決めない生 JSON 列。取り決めたくなったら独立した Model に切り出す -/
   | json
   deriving Repr, BEq, Inhabited
 

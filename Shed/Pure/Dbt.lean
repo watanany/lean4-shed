@@ -3,10 +3,10 @@ import Lean.Data.Json
 /-!
 # Shed.Pure.Dbt — dbt manifest の型と検証規則
 
-**正本の向きに注意**: `Shed.Pure.Contract` は「Lean が正本 → dbt を生成」だが、
-こちらは逆向き — **dbt(SQL)が正本**であり、dbt が吐く manifest.json を
+**大もとの向きに注意**: `Shed.Pure.Contract` は「Lean が大もと → dbt を生成」だが、
+こちらは逆向き — **dbt(SQL)が大もと**であり、dbt が吐く manifest.json を
 Lean に取り込んで、dbt tests では書けない検証(プロジェクト構造・レイヤー規約)
-を行う。実プロジェクトでは dbt が既にチームの正本なので、Lean は
+を行う。実プロジェクトでは dbt が既にチームの大もとなので、Lean は
 既存パイプラインに変更を求めない下流の検証・理解レイヤーとして導入できる。
 
 - 取り込みは `Shed.Sys.Dbt` のコマンド(`def_dbt_project` / `dbt_check`)が行う
@@ -147,7 +147,7 @@ structure Conventions where
 def Conventions.ofPrefixes (staging : Array String) : Conventions :=
   { isStaging := fun n => staging.any (n.name.startsWith ·) }
 
-/-- 規約違反。受容宣言(`Waiver`)との照合のため、モデルと依存先の
+/-- 規約違反。例外の許可(`Waiver`)との照合のため、モデルと依存先の
 uniqueId を構造として持つ。 -/
 structure Violation where
   /-- 違反したモデルの uniqueId -/
@@ -184,17 +184,17 @@ def martsNotOnRaw (conv : Conventions := {}) : Rule := fun p =>
 `stagingOnlyFromRaw { isStaging := fun n => ... }` の形で注入する。 -/
 def defaultRules : Array Rule := #[stagingOnlyFromRaw, martsNotOnRaw]
 
-/-- 全規則を実行して違反メッセージを集める(受容宣言なしの素朴版)。 -/
+/-- 全規則を実行して違反メッセージを集める(例外の許可なしの素朴版)。 -/
 def runRules (rules : Array Rule) (p : Project) : Array String :=
   rules.flatMap (· p) |>.map (·.message)
 
--- ## 受容宣言(意図的な規約違反の表明)
+-- ## 例外の許可(Waiver、意図的な規約違反の表明)
 
 /--
-受容済みの依存 = 意図的な設計判断としての規約違反。
+許可済みの依存 = 意図的な設計判断としての規約違反。
 
-例外は「見逃し」ではなく**署名済みの判断**として残す —
-だから `reason` は必須。理由を書けない例外は受容ではなく放置である。
+例外は「見逃し」ではなく**記録に残した判断**として残す —
+だから `reason` は必須。理由を書けない例外は許可ではなく放置である。
 -/
 structure Waiver where
   /-- 違反モデルの uniqueId(例: "model.pkg.dim_area")-/
@@ -205,11 +205,11 @@ structure Waiver where
   reason : String
   deriving Repr, BEq, Inhabited, Lean.ToJson, Lean.FromJson
 
-/-- 違反の列に受容宣言を適用する。
-返り値: (残った違反, 一度も使われなかった宣言)。
+/-- 違反の列に例外の許可を適用する。
+返り値: (残った違反, 一度も使われなかった許可)。
 
-**未使用の宣言も異常**として返す — 違反が解消されたのに宣言が残るのは
-受容リストの腐敗(実態と合っていない)なので、呼び出し側はエラーにすべき。 -/
+**未使用の許可も異常**として返す — 違反が解消されたのに許可が残るのは
+許可リストが実態と合っていない状態なので、呼び出し側はエラーにすべき。 -/
 def applyWaivers (waivers : Array Waiver) (violations : Array Violation) :
     Array Violation × Array Waiver :=
   let remaining := violations.filter fun v =>
@@ -218,14 +218,14 @@ def applyWaivers (waivers : Array Waiver) (violations : Array Violation) :
     !violations.any fun v => w.model == v.modelId && w.dep == v.depId
   (remaining, unused)
 
-/-- 全規則を実行し、受容宣言を適用した上で異常メッセージを集める。
-残った違反と未使用の宣言の両方が異常。空なら健全。 -/
+/-- 全規則を実行し、例外の許可を適用した上で異常メッセージを集める。
+残った違反と未使用の許可の両方が異常。空なら健全。 -/
 def runRulesWith (waivers : Array Waiver) (rules : Array Rule) (p : Project) :
     Array String :=
   let (remaining, unused) := applyWaivers waivers (rules.flatMap (· p))
   remaining.map (·.message)
     ++ unused.map fun w =>
-      s!"未使用の受容宣言: {w.model} → {w.dep}(違反が存在しない。宣言を削除せよ)"
+      s!"未使用の例外の許可: {w.model} → {w.dep}(違反が存在しない。許可を削除せよ)"
 
 -- ## 実行可能 example
 
@@ -265,7 +265,7 @@ private def exampleProject : Project := {
     { uniqueId := "model.pkg.report_b", name := "report_b", type := .model,
       dependsOn := #["seed.pkg.raw_a"] }] }).size == 1
 
--- example: 受容宣言は該当する違反を消し、残りだけが異常になる
+-- example: 例外の許可は該当する違反を消し、残りだけが異常になる
 #guard
   let violations := #[
     { modelId := "model.pkg.dim_a", depId := "source.pkg.master_data",

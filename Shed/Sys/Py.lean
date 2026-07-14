@@ -1,15 +1,15 @@
 import Shed.Sys.Subprocess
 
 /-!
-# Shed.Sys.Py — 型付き契約で Python を呼ぶ脱出ハッチ
+# Shed.Sys.Py — 型付きの取り決めで Python を呼ぶ逃げ道
 
 どうしても Python が楽な処理は常に残る。それを敗北にせず、
 **制御フローと型は Lean に留めたまま** Python 片を部品として呼ぶための層。
 
 - 入力は `ToJson` で渡り、Python 側では変数 `data` に束縛される
 - スニペットは `data` を使う **式**(expression)。その評価結果が
-  JSON になって返り、`FromJson` で再検証される(契約の正本は Lean の型)
-- スニペットは argv 経由で渡すためクォート地獄は無い
+  JSON になって返り、`FromJson` で再検証される(取り決めの大もとは Lean の型)
+- スニペットは argv 経由で渡すためクォートの煩雑さは無い
 
 ## 失敗モード
 
