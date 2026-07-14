@@ -99,7 +99,7 @@ HTTP 配信検証」と流すミニ ETL(約 200 行)。
 | [`Pure.Glob`](Shed/Pure/Glob.lean) + [`Sys.Os`](Shed/Sys/Os.lean) | glob 照合と走査 | [tests/OsLogTest.lean](tests/OsLogTest.lean) |
 | [`Sys.Log`](Shed/Sys/Log.lean) | ISO 8601 + レベルの最小ロガー | [tests/OsLogTest.lean](tests/OsLogTest.lean) |
 | [`Sys.Subprocess`](Shed/Sys/Subprocess.lean) / [`Sys.Worker`](Shed/Sys/Worker.lean) | 単発 / 常駐のサブプロセス + JSON(タイムアウト既定 120 秒) | [tests/Smoke.lean](tests/Smoke.lean) |
-| [`Pure.Contract`](Shed/Pure/Contract.lean) | データ契約の定義 → dbt / JSON Schema 生成 | [examples/Contracts.lean](examples/Contracts.lean) |
+| [`Pure.Contract`](Shed/Pure/Contract.lean) | データの取り決めの定義 → dbt / JSON Schema 生成 | [examples/Contracts.lean](examples/Contracts.lean) |
 | [`Pure.Dbt`](Shed/Pure/Dbt.lean) + [`Sys.Dbt`](Shed/Sys/Dbt.lean) | dbt manifest のコンパイル時取り込みと規約検証 | [examples/DbtChecks.lean](examples/DbtChecks.lean) |
 | (横断) | 上記ほぼ全部を使うミニ ETL | [examples/LogPipeline.lean](examples/LogPipeline.lean) |
 

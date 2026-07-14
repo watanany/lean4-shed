@@ -84,7 +84,7 @@ def main : IO Unit := do
   catch _ => pure true
   check "Worker: shutdown 後の呼び出しはエラー" failed
 
-  -- callRaw: タイムアウトで kill され IO.userError(bounded-by-default)
+  -- callRaw: タイムアウトで kill され IO.userError(既定で有界)
   let t0 ← IO.monoMsNow
   let timedOut ← try
     discard <| callRaw { exe := "sleep", args := #["30"] } (timeoutSec := 1)
